@@ -1,0 +1,2 @@
+ touch fs
+ mkfs fs 1440

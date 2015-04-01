@@ -1,0 +1,32 @@
+#!/bin/bash
+
+mkdir helloworld
+ls
+echo "in shell non 0 is false\n and 0 is true"
+echo test begins 
+echo 
+echo $n #prints nothing
+A="this is fun"
+echo $A
+echo \(A\)
+
+I=1
+echo $I
+while [ $I -lt 10 ]
+
+do
+	mkdir dir$I
+		I=$(expr $I + 1)
+done
+
+ls
+
+DIRNAMES=$(ls $DIR)
+for NAME in $DIRNAMES
+	do
+		if [ -f $NAME ]; then
+			echo $NAME is a REG file
+		else
+			echo $NAME is NOT REG
+		fi
+	done

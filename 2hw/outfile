@@ -1,0 +1,122 @@
+NAME: TYLER CRUZ
+ID  : 11333476
+ASS2: JAN 26, 2015
+
+enter main
+&argc=bfc66c40 argv=bfc66c44 env=bfc66c48
+&a=bfc66c24    &b=bfc66c28   &c=bfc66c2c
+enter A
+&d=bfc66bf4    &e=bfc66bf8   &f=bfc66bfc
+enter B
+&g=bfc66bc4    &h=bfc66bc8   &i=bfc66bcc
+enter C
+&u=bfc66b8c    &v=bfc66b90   &w=bfc66b94
+
+stack frame linked list:
+bfc66ba8->bfc66bd8->bfc66c08->bfc66c38->0->
+
+Address 	Contents
+bfc66b98	bfc66b98
+bfc66b9c	       1 :local z(counter variable) in C()
+bfc66ba0	       0
+bfc66ba4	       0
+bfc66ba8	bfc66bd8 :ebp(stack frame pointer) for C()
+bfc66bac	 804856e :return address of C()
+bfc66bb0	       6 :x parameter of C()
+bfc66bb4	       7 :y parameter of C()
+bfc66bb8	bfc66bc8
+bfc66bbc	bfc66bcc
+bfc66bc0	  2b2a20
+bfc66bc4	       6 :local g of B()
+bfc66bc8	       7 :local h of B()
+bfc66bcc	       8 :local i of B()
+bfc66bd0	       0 
+bfc66bd4	       0
+bfc66bd8	bfc66c08 :ebp(stack frame pointer) for B()
+bfc66bdc	 8048505 :return address of B()
+bfc66be0	       3 :x parameter of B()
+bfc66be4	       4 :y parameter of B()
+bfc66be8	bfc66bf8
+bfc66bec	bfc66bfc
+bfc66bf0	  2b2a20
+bfc66bf4	       3 :local d of A()
+bfc66bf8	       4 :local e of A()
+bfc66bfc	       5 :local f of A()
+bfc66c00	 804875b
+bfc66c04	  4e9918
+bfc66c08	bfc66c38 :ebp(stack frame pointer) for A()
+bfc66c0c	 804849c :return address of A()
+bfc66c10	       1 :x parameter of A()
+bfc66c14	       2 :y parameter of A()
+bfc66c18	bfc66c28
+bfc66c1c	bfc66c2c
+bfc66c20	  4d7270
+bfc66c24	       1 :local a of main()
+bfc66c28	       2 :local b of main()
+bfc66c2c	       3 :local c of main()
+bfc66c30	 8048680
+bfc66c34	       0
+bfc66c38	       0 :ebp(stack frame pointer) of main()
+bfc66c3c	  12a4d3 :return address of main()
+bfc66c40	       1 :address/content of argc parameter of main()
+bfc66c44	bfc66cd4 :argv parameter of main()
+bfc66c48	bfc66cdc :env parameter of main()
+bfc66c4c	  ce4858
+bfc66c50	       0
+bfc66c54	bfc66c1c
+bfc66c58	bfc66cdc
+bfc66c5c	       0
+bfc66c60	 804822c
+bfc66c64	  2b1ff4
+bfc66c68	       0
+bfc66c6c	       0
+bfc66c70	       0
+bfc66c74	e24ecb6d
+bfc66c78	4bdf6e12
+bfc66c7c	       0
+bfc66c80	       0
+bfc66c84	       0
+bfc66c88	       1
+bfc66c8c	 8048360
+bfc66c90	       0
+bfc66c94	  4dc6a0
+bfc66c98	  12a3e9
+bfc66c9c	  4e8ff4
+bfc66ca0	       1
+bfc66ca4	 8048360
+bfc66ca8	       0
+bfc66cac	 8048381
+bfc66cb0	 8048414
+bfc66cb4	       1
+bfc66cb8	bfc66cd4
+bfc66cbc	 8048680
+bfc66cc0	 80486f0
+bfc66cc4	  4d7270
+bfc66cc8	bfc66ccc
+bfc66ccc	  4e9918
+bfc66cd0	       1
+bfc66cd4	bfc68b5c
+bfc66cd8	       0
+bfc66cdc	bfc68b62
+bfc66ce0	bfc68b8d
+bfc66ce4	bfc68ba0
+bfc66ce8	bfc68bcb
+bfc66cec	bfc68bdb
+bfc66cf0	bfc68be6
+bfc66cf4	bfc68c37
+bfc66cf8	bfc68c60
+bfc66cfc	bfc68c72
+bfc66d00	bfc68c7c
+bfc66d04	bfc68ca2
+bfc66d08	bfc68ccb
+bfc66d0c	bfc68cff
+bfc66d10	bfc68d0e
+bfc66d14	bfc68d60
+bfc66d18	bfc68d8e
+bfc66d1c	bfc68da2
+bfc66d20	bfc68dba
+bfc66d24	bfc68e0a
+exit C
+exit B
+exit A
+exit main

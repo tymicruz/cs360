@@ -1,0 +1,49 @@
+My name is Tyler Cruz and I'm #1.
+main() in assembly call mymain() in C
+
+in mymain(): argc=1
+argv[0] = a.out
+
+environment variables:
+env[0]: MATE_DESKTOP_SESSION_ID=this-is-deprecated
+env[1]: SSH_AGENT_PID=1558
+env[2]: GPG_AGENT_INFO=/tmp/keyring-21d1Ep/gpg:0:1
+env[3]: SHELL=/bin/bash
+env[4]: TERM=xterm
+env[5]: XDG_SESSION_COOKIE=b425b513376b83a86aba077800000009-1422669211.865721-1552094888
+env[6]: MATE_KEYRING_CONTROL=/tmp/keyring-21d1Ep
+env[7]: WINDOWID=44040196
+env[8]: USER=root
+env[9]: SSH_AUTH_SOCK=/tmp/keyring-21d1Ep/ssh
+env[10]: MATECORBA_SOCKETDIR=/tmp/matecorba-tcruz
+env[11]: DEFAULTS_PATH=/usr/share/gconf/default.default.path
+env[12]: USERNAME=tcruz
+env[13]: SESSION_MANAGER=local/tyLand:@/tmp/.ICE-unix/1484,unix/tyLand:/tmp/.ICE-unix/1484
+env[14]: XDG_CONFIG_DIRS=/etc/xdg/xdg-default:/etc/xdg
+env[15]: MAIL=/var/mail/root
+env[16]: DESKTOP_SESSION=default
+env[17]: PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:./
+env[18]: PWD=/home/tcruz/360/LABS/1LAB
+env[19]: LANG=en_US.UTF-8
+env[20]: MANDATORY_PATH=/usr/share/gconf/default.mandatory.path
+env[21]: MDM_XSERVER_LOCATION=local
+env[22]: HOME=/root
+env[23]: SHLVL=2
+env[24]: LOGNAME=root
+env[25]: DBUS_SESSION_BUS_ADDRESS=unix:abstract=/tmp/dbus-D7fHf5nvq2,guid=e83940a0b647cd198312fc9700000029
+env[26]: XDG_DATA_DIRS=/usr/share/default:/usr/local/share/:/usr/share/:/usr/share/mdm/
+env[27]: MDMSESSION=default
+env[28]: WINDOWPATH=8
+env[29]: DISPLAY=:0
+env[30]: MDM_LANG=en_US.UTF-8
+env[31]: XAUTHORITY=/home/tcruz/.Xauthority
+env[32]: COLORTERM=mate-terminal
+env[33]: _=./a.out
+env[34]: OLDPWD=/home/tcruz/360/LABS
+---------- testing YOUR myprintf() ---------
+this is a test
+testing a=123 b=0x7B c=a s=testing
+string=testing string, a=-1024  b=1024  c=02000  d=0x400
+mymain() return to main() in assembly
+a=1234 b=5678
+

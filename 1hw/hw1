@@ -1,0 +1,114 @@
+//Name: Tyler Cruz
+//Spring 2015 360
+
+A binary executable file, a.out, consists of
+
+           |header| Code | Data |<-BSS->|
+
+where BSS (Block Symbol Start) is for uninitialized globals and static locals.
+
+The Unix command    size a.out   shows the size of TEXT, DATA, BSS of a.out.
+
+Use the following C program, t1.c, to generate t2.c, t3.c,.. t6.c as specified below. 
+        //********** t1.c file ************
+          int g;                              
+          main()                              
+          {                                   
+             int a,b,c; 
+             a = 1; b = 2; 
+             c = a + b;
+             printf("c=%d\n", c);
+          }                                
+
+t2.c: Change the global variable  g  to  int g=3;
+t3.c  Change the global variable  g  to  int g[10000];
+t4.c  Change the global variable  g  to  int g[10000] = {4};
+t5.c  Change the local variables of main() to
+                 int a,b,c, d[10000];
+t6.c. Change the local variables of main() to
+          static int a,b,c, d[10000];
+
+(A). For each case, use cc -m32 t#.c to generate a.out. Then use ls -l a.out to
+     get a.out size, and run size a.out to get its section sizes. Record the
+     observed sizes in a table:
+
+          Case  | a.out |  TEXT  |  DATA  |  BSS   |
+        --------------------------------------------
+          (1)   | 7176  | 1175   | 256    | 12     |
+        --------------------------------------------  
+          (2)   | 7180  | 1175   | 260    | 8      |
+        --------------------------------------------
+          (3)   | 7176  | 1175   | 256    | 40032  |
+        --------------------------------------------
+          (4)   | 47220 | 1175   | 40280  | 8      |
+        --------------------------------------------
+          (5)   | 7176  | 1191   | 256    | 12     |
+        --------------------------------------------        
+          (6)   | 7268  | 1175   | 256    | 40068  |
+        --------------------------------------------
+
+                  ANSWER THESE QUESTIONS:
+
+   1. Variables in C may be classified as
+
+          globals ---|--- UNINITIALIZED  globals;
+                     |---   INITIALIZED  globals;
+
+          locals  ---|--- AUTOMATIC locals;
+                     |--- STATIC    locals;
+          
+
+   In terms of the above classifications and the variables g, a, b, c, d,
+
+      Which variables are in DATA? 
+t1: N/A
+t2: g
+t3: N/A
+t4: g
+t5: N/A
+t6: N/A
+      Which variables are in BSS ?
+t1: g
+t2: N/A
+t3: g
+t4: N/A
+t5: g
+t6: g, a, b, c, d
+
+   2. In terms of the TEXT, DATA and BSS sections,
+      Which sections are in a.out, which section is NOT in a.out?
+      WHY?
+
+TEXT and DATA sections are included in a.out.
+On the other hand, the BSS section is not included in a.out.
+the the read/write data stored in the data section is important and necessary at compile time, therefore it is included in a.out
+the text section included executable instructions that are essential for running the a.out executable file, therefore it is necessary in a.out.
+
+Why is the bss section not included in a.out?
+the bss section essentially doesn't take up any space since it only olds zero and null values of uninitialized global and static variables, therefore they are essentially irrelevant at compile time and unnecessary for a.out.
+
+  (B). For each case, use   cc -static t.c   to generate a.out.
+       Record the sizes again and compare them with the sizes in (A).
+
+          Case  | a.out |  TEXT  |  DATA  |  BSS   |
+        --------------------------------------------
+          (1)   | 742740| 668454 | 3284   | 5892   |
+        --------------------------------------------
+          (2)   | 742740| 668454 | 3284   | 5892   |
+        --------------------------------------------
+          (3)   | 742740| 668454 | 3284   | 45924  |
+        --------------------------------------------
+          (4)   | 782770| 668454 | 43316  | 5892   |
+        --------------------------------------------
+          (5)   | 742740| 668486 | 3284   | 5892   |
+        --------------------------------------------
+          (6)   | 742832| 668470 | 3284   | 45924  |
+        --------------------------------------------
+      
+
+WHAT DO YOU SEE?
+The overall size of a.out and each of its sections were signifcantly increased when creating a.out using static linking.
+text section increased nearly 600x for nearly all cases.
+
+WHY?
+One the reasons the overall size of a.out was significantly increased is because by creating a.out using static linking, all of the necessary library functions are included in a.out.

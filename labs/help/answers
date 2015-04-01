@@ -1,0 +1,65 @@
+---------------t1.c
+
+	The process id of the process that executes a.out is 3136
+	The ppid of the process that executes a.out is 3189.
+
+	The process id of the CHILD process is 3190.
+	The ppid of the process the CHILD process is 3189.
+
+	After running a.out multiple times, under the same user in the same
+	terminal, I observed that the parent process id of the process which
+	executes a.out does NOT change. This is because that is the process
+	id of the shell.
+
+---------------t2.c
+
+1) The value of pid=(&status) is the process id of the child process that
+	the waiting process was waiting for to die. In this case, the dead 
+	child process' process id is 3469.
+
+	It looks like status in "wait(&status)" is the exitValue in 
+	"exit(exitValue)" multiplied by 256 or 0x0100.
+
+2) The value of pid=(&status) is the process id of the child process that
+ 	the waiting process was waiting for to die.
+
+	Now, the status in "wait(&status)" is always 11 or 0x000b, no matter
+	what the exitValue is in "exit(exitValue)."
+
+3)	The value of pid=(&status) is the process id of the child process that
+	the waiting process was waiting for to die.
+
+	Now, the status in "wait(&status)" is always 9 or 0x0008.
+-------------------------------------------------------------------
+(3). Run a.out.
+
+	The process with a process id of 2895 executes a.out
+	The process with a process id of 2895 executes b.out
+	*The same process executes a.out and b.out
+
+	The argv[] strings in b.out are the tokens of the tokenized line that
+	I entered after the a.out program prompted me to type.
+
+(4). Compile and run io.c file:
+
+	The printed lines go to "myfile" because we redirected the output
+	for printf from stdout(console) to myfile. Output redirection. We
+	changed file descriptor 1 to point to myfile.
+
+(5). 
+
+1)	A pipe has a read end and a write end.
+	A process  writes to the write and the the read end sucks
+	in the output of the write end.
+
+2)	to write we first close pd[0] which is most likely 3 and we close
+	1 which is where output is currently directed to stdout, and we
+	point the file struct of 1 to our p[1](WRITE)
+
+3)	to read we first close the pd[1] which is most likely point to
+	4 and we close 0 which is where input is currently being received
+	from which is stdin. Lastly we point open pd[0] to take the place
+	of the null fd[0] where stdin was connected.
+
+	
+

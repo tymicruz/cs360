@@ -1,0 +1,7 @@
+#! /bin/bash
+
+cc -o myclient client.c
+echo client built
+
+cc -o ../myserver server.c
+echo server built
