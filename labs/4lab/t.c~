@@ -6,8 +6,8 @@
 #include <linux/ext2_fs.h>
 
 #define BLKSIZE 1024
-#define MAX_PATH_LEN 256
-#define MAX_PATH_PIECES 64
+#define MAX_PATH_LEN 128
+#define MAX_PATH_PIECES 32
 
 
 //define short TYPE, save typing efforts (note from Dr. K.C. Wang)

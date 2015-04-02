@@ -1,0 +1,2 @@
+cc -o lab5.out t.c h.c
+lab5.out

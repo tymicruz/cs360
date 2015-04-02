@@ -1,3 +1,5 @@
+#include "h.h"
+
 char *disk = "adisk";
 
 main(int argc, char* argv[])
