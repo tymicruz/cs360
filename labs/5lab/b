@@ -1,2 +1,2 @@
-cc -o lab5.out t.c h.c
+cc -o lab5.out main.c h.h
 lab5.out
