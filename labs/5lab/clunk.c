@@ -1,4 +1,102 @@
 #include "h.h"
+int tokenize(char *path, char *pieces[], int *npieces)
+{
+	char *p;
+	char path_copy[MAX_PATH_LEN];
+
+	*npieces = 0;
+
+	//to avoid "stack smashing; will occur if pLen > MAXpLen
+	if(strlen((char*)path) > MAX_PATH_LEN)
+	{
+		printf("given path is too long, max 128\n");
+		printf("exiting program ..\n");
+		exit(1);
+	}
+
+	strcpy(path_copy, path);
+
+	p = strtok(path_copy, "/");
+
+	while(p != NULL)
+	{
+		pieces[(*npieces)++] = p;
+		p = strtok(NULL, "/");
+
+		if((*npieces) - 1 == MAX_PATH_PIECES)
+		{
+			printf("too many folder redirections, %d max\n", MAX_PATH_PIECES - 1);
+			printf("exiting program ..\n");
+		
+			exit(1);
+		}
+	}
+
+	pieces[(*npieces)] = 0;//null terminate array of strings
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 int nextDataBlock(INODE *ip, int num)
 {
@@ -44,7 +142,7 @@ int nextDataBlock(INODE *ip, int num)
 		i = 0;
 
 		//keep looking for the block you need
-		while(intp < level1 + BLKSIZE && intp != 0 && *intp != 0)
+		while((int)intp < (int)level1 + (int)BLKSIZE && intp != 0 && *intp != 0)
 		{
 			if(num == count)
 			{	
@@ -72,12 +170,12 @@ int nextDataBlock(INODE *ip, int num)
 		intp = (int*)level1;
 		i = 0;
 
-		while(intp < level1 + BLKSIZE && intp != 0 && *intp != 0)
+		while((int)intp < (int)level1 + (int)BLKSIZE && intp != 0 && *intp != 0)
 		{
 			get_block(fd, *intp, level2);
 			intp2 = (int *)level2;
 
-			while(intp2 < level2 + BLKSIZE && intp2 != 0 && *intp2 != 0)
+			while((int)intp2 < (int)level2 + (int)BLKSIZE && intp2 != 0 && *intp2 != 0)
 			{
 				if(num == count)
 				{
@@ -97,3 +195,4 @@ int nextDataBlock(INODE *ip, int num)
 		//i dont think it can ever get to this line of code
 		return 0;
 }
+

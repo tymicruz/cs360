@@ -1,0 +1,3 @@
+#! /bin/user/sh
+
+sudo gedit main.c h.h &
