@@ -35,7 +35,7 @@ int tst_bit(char *buf, int bit)
   return 0;
 }
 
-imap()
+imap(int fd)
 {
   char buf[BLKSIZE];
   int  imap, ninodes;
@@ -53,7 +53,7 @@ imap()
   gp = (GD *)buf;
 
   imap = gp->bg_inode_bitmap;
-  printf("bmap = %d\n", imap);
+  printf("inodebitmap = %d\n", imap);
 
   // read inode_bitmap block
   get_block(fd, imap, buf);

@@ -63,7 +63,37 @@ int main(int argc, char* argv[], char* env[])
 		}
 		if(strcmp(myargv[0], "quit") == 0)
 		{
+			quit();
+		}
+		if(strcmp(myargv[0], "imap") == 0)
+		{
+			i = ialloc(fd);
 
+			if(i < 0)
+			{
+				printf("no more inodes to alloc");
+			}
+			else
+			{	printf("inode %d is next available.\n", i);
+				imap(fd);
+				idealloc(fd, i);
+			}
+			imap(fd);
+		}
+		if(strcmp(myargv[0], "bmap") == 0)
+		{
+			i = balloc(fd);
+
+			if(i < 0)
+			{
+				printf("no more blocks to alloc");
+			}
+			else
+			{	printf("block %d is next available.\n", i);
+				bmap(fd);
+				bdealloc(fd, i);
+			}
+			bmap(fd);
 		}
 
 	}

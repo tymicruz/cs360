@@ -104,6 +104,7 @@ int inode_begin_block_G;
 int inodes_per_block_G;
 int num_inode_blocks_G;
 int num_inodes_G;
+int num_blocks_G;
 
 PROC *running, p0, p1;
 MINODE minode[NMINODES], *root;
@@ -113,13 +114,42 @@ char *t1 = "xwrxwrxwr-------";
 char *t2 = "----------------";
 
 
+int get_block(int dev, int blk, char buf[ ]);
+int put_block(int dev, int blk, char buf[ ]);
+int tst_bit(char *buf, int bit);
+int set_bit(char *buf, int bit);
+int clr_bit(char *buf, int bit);
+int getInodeBlockNumberAndOffset(int inode, int *block_num, int *offset);
+int superCheck(int dev);
+int getGDInfo(int dev);
+int init();
+int getino(int dev, char *pathname);
+MINODE* iget(int dev, int ino);
+int iput (MINODE *mip);
+int findmyname(MINODE *parent, int myino, char *myname);
+int findino(MINODE *mip, int *myino, int *parentino);
+int mount_root();
 int list_file(MINODE *mip, char *name);
+int list_dir(MINODE *mip);
 int ls(char *pathname);
-int nextDataBlock(INODE *ip, int num);
-int tokenize(char *path, char *pieces[], int *npieces);
-char* baseNameChopper(char *path);
-MINODE* iget(int d, int i);
+int ls_wrap(char *path);
+int cd(char *path);
+int cd_wrap(char *path);
 char* pwd();
+int tokenize(char *path, char *pieces[], int *npieces);
+int tokCmd(char *line, char *myargv[], int *myargc);
+int nextDataBlock(INODE *ip, int num);
+int incFreeInodes(int dev);
+int decFreeInodes(int dev);
+int ialloc(int dev);
+int idealloc(int dev, int block);
+int imap(int fd);
+int incFreeBlocks(int dev);
+int decFreeBlocks(int dev);
+int balloc(int dev);
+int bdealloc(int dev, int block);
+int bmap(int fd);
+int quit();
 
 
 int get_block(int dev, int blk, char buf[ ]){
@@ -173,27 +203,139 @@ int clr_bit(char *buf, int bit){
 	//bit is already clr
 	if(tst_bit(buf, bit)==0)
 	{
+		//return to prevent setting 0 bit
 		return -1;
 	}
 
 	//xor the bit you want to clr
 	//if target bit is 1 it will set to 0
-	//if target bit is 0 it will be set to 0
+	//if target bit is 0 it will be set to 1
 	//untargeted bits:	if 1, bit will stay 1 (1 xor 0 is 1)
-	//			if 0, bit will stay 0 (0 xor 0 is 1)
+	//			if 0, bit will stay 0 (0 xor 0 is 0)
 
 	//xor targeted bit with binary 1
+	//we make sure target bit isn't already 0 before we
+	//get here, otherwise, instead of clearing bit, we
+	//will be setting it
 	buf[byte] = buf[byte] ^ (1 << bit_int_byte);
 	
 	//return cleared bit
 	return bit;
 } 
 
-int pressEnterToContinue(){
-	char line[2];
-	__fpurge(stdin);
-	fgets(line, 2, stdin);
-	__fpurge(stdin);
+int decFreeInodes(int dev)
+{
+  char buf[BLKSIZE];
+
+  // dec free inodes count in SUPER and GD
+  get_block(dev, SUPERBLOCK, buf);
+  sp = (SUPER *)buf;
+  sp->s_free_inodes_count--;
+  put_block(dev, SUPERBLOCK, buf);
+
+  get_block(dev, GDBLOCK, buf);
+  gp = (GD *)buf;
+  gp->bg_free_inodes_count--;
+  put_block(dev, GDBLOCK, buf);
+}
+
+int incFreeInodes(int dev)
+{
+  char buf[BLKSIZE];
+
+  // dec free inodes count in SUPER and GD
+  get_block(dev, SUPERBLOCK, buf);
+  sp = (SUPER *)buf;
+  sp->s_free_inodes_count++;
+  put_block(dev, SUPERBLOCK, buf);
+
+  get_block(dev, GDBLOCK, buf);
+  gp = (GD *)buf;
+  gp->bg_free_inodes_count++;
+  put_block(dev, GDBLOCK, buf);
+}
+
+int ialloc(int dev)
+{
+  int  i;
+  char buf[BLKSIZE];
+
+  // read inode_bitmap block
+  get_block(dev, imap_block_G, buf);
+
+  for (i=0; i < num_inodes_G; i++){
+    if (tst_bit(buf, i)==0){
+       set_bit(buf,i);
+       decFreeInodes(dev);
+
+       put_block(dev, imap_block_G, buf);
+
+       return i+1;
+    }
+  }
+  printf("ialloc(): no more free inodes\n");
+  return -1;
+}
+
+int idealloc(int dev, int ino)
+{
+  int  i;
+  char buf[BLKSIZE];
+
+  // read inode_bitmap block
+  get_block(dev, imap_block_G, buf);
+
+  if(ino <= num_inodes_G && ino > 10)//don't mess with first 10 inodes
+  {
+  	i = clr_bit(buf, ino - 1);
+
+  	if(i < 0)
+  	{
+  		printf("error: ino ibit, %d, is already 0.\n", ino);
+  		return -1;
+  	}
+
+  	put_block(dev, imap_block_G, buf);
+  	incFreeInodes(dev);
+
+  	return ino;
+  }
+  else
+  {
+  	printf("can't delloc ino ibit, %d\n", ino);
+  	return -1;
+  }
+}
+
+imap(int fd)
+{
+  char buf[BLKSIZE];
+  int  imap, ninodes;
+  int  i;
+
+  // read SUPER block
+  get_block(fd, 1, buf);
+  sp = (SUPER *)buf;
+
+  ninodes = sp->s_inodes_count;
+  printf("ninodes = %d\n", ninodes);
+
+  // read Group Descriptor 0
+  get_block(fd, 2, buf);
+  gp = (GD *)buf;
+
+  imap = gp->bg_inode_bitmap;
+  printf("inodebitmap = %d\n", imap);
+
+  // read inode_bitmap block
+  get_block(fd, imap, buf);
+
+  for (i=0; i < ninodes; i++){
+    (tst_bit(buf, i)) ?	putchar('1') : putchar('0');
+    if (i && (i % 8)==0)
+       printf(" ");
+  }
+  printf("\n");
 }
 
 int getInodeBlockNumberAndOffset(int inode, int *block_num, int *offset){
@@ -272,15 +414,16 @@ int superCheck(int dev)
 		num_inode_blocks_G++;
 	}
 
-	num_inodes_G = inodes_per_block_G * num_inode_blocks_G;
+	num_inodes_G = inodes_per_block_G * num_inode_blocks_G;//or = sp->s_inodes_count;
+	num_blocks_G = sp->s_blocks_count;
 	printf("inodes per block \t= %d\n", inodes_per_block_G);
 	printf("num inode blocks \t= %d\n", num_inode_blocks_G);
 	printf("num inodes \t\t= %d\n", num_inodes_G);
-
+	printf("num blocks \t\t= %d\n", num_blocks_G);
 }
 
 //call this in init
-getGDInfo(int dev)
+int getGDInfo(int dev)
 {
 	printf("\nENTER for GD block content:\t\t|\n"); 
 	printf("\t\t\t\t\t|\n");
@@ -376,10 +519,6 @@ int getino(int dev, char *pathname)
 	//printf("%s\n", pathname);
 	tokenize(pathname, path_pieces, &path_count);
 
-/*	for(i = 0; i < path_count; i++)
-	{
-		printf("%d:%s\n",i+1, path_pieces[i]);
-	}*/
 	if(path_count == 0)
 	{
 		return ROOT_INODE;
@@ -397,8 +536,8 @@ int getino(int dev, char *pathname)
 
 	more = nextDataBlock(ip, block_check++);
 
-//checking path pieces because they were jacked up from tokenize
-/*	for(i = 0; i < path_count; i++)
+	//checking path pieces because they were jacked up from tokenize
+	/*	for(i = 0; i < path_count; i++)
 	{
 		printf("%d:%s\n",i+1, path_pieces[i]);
 	}*/
@@ -530,7 +669,7 @@ MINODE* iget(int dev, int ino)
 
 			//copy ip node to inmemoryinode	
 			memcpy(&(minode[i].INODE), ip, sizeof(INODE));
-//printf("can't find it");getchar();
+	//printf("can't find it");getchar();
 			return &(minode[i]);
 		}
 		else if(minode[i].ino == ino){
@@ -761,7 +900,8 @@ int mount_root()
 	
 }
 
-int list_file(MINODE *mip, char *name){
+int list_file(MINODE *mip, char *name)
+{
 	char ftime[64];
 	INODE *ip = &(mip->INODE);
 	
@@ -787,7 +927,7 @@ int list_file(MINODE *mip, char *name){
 		}
   }*/
 
-//print permissions
+	//print permissions
 	for (i=8; i >= 0; i--){
 		//if bit is 1
     if (tst_bit((char*)&(ip->i_mode), i))
@@ -820,7 +960,6 @@ int list_file(MINODE *mip, char *name){
      // use readlink() SYSCALL to read the linkname
      // printf(" -> %s", linkname);
   printf("\n");
-
 }
 
 int list_dir(MINODE *mip)
@@ -860,11 +999,11 @@ int list_dir(MINODE *mip)
 	}
 }
 
-ls(char *pathname)
+int ls(char *pathname)
 {
 	int ino = ROOT_INODE; 
 	MINODE *mip;
-//printf("ls%s\n", pathname);
+	//printf("ls%s\n", pathname);
 	//if pathname is not root, get ino
 	if(strcmp(pathname, "/") != 0)
 	{
@@ -894,7 +1033,7 @@ ls(char *pathname)
 	iput(mip);
 }
 
-ls_wrap(char *path)
+int ls_wrap(char *path)
 {
 	char lspath[MAX_PATH_LEN] = "";
 
@@ -925,7 +1064,7 @@ ls_wrap(char *path)
 	ls(lspath);
 }
 
-cd(char *path)
+int cd(char *path)
 {
 	MINODE *mip;
 	int ino;
@@ -970,7 +1109,6 @@ cd(char *path)
 
 }
 
-
 int cd_wrap(char *path)
 {
 	char cdpath[MAX_PATH_LEN] = "";
@@ -997,7 +1135,6 @@ int cd_wrap(char *path)
 	//printf("try to cd to this:%s\n", cdpath);
 
 	cd(cdpath);
-
 }
 //char cwd[256];
 
@@ -1057,43 +1194,6 @@ char* pwd()
 	return (char*)path;
 }
 
-/*char* baseNameChopper(char *path)
-{
-	char c[64] = {0};
-	int i = 0;
-	strcpy(c, basename(path));
-	//printf("%s\n", c);
-	i = strlen(path) - strlen(c);
-	//printf("%d\n", i);
-	path[i] = 0;
-
-	return c;
-}
-*/
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 int tokenize(char *path, char *pieces[], int *npieces)
@@ -1102,7 +1202,7 @@ int tokenize(char *path, char *pieces[], int *npieces)
 	char path_copy[MAX_PATH_LEN];
 
 	*npieces = 0;
-//printf("entering tokenize function()\n");
+	//printf("entering tokenize function()\n");
 	//to avoid "stack smashing; will occur if pLen > MAXpLen
 	if(strlen((char*)path) > MAX_PATH_LEN)
 	{
@@ -1235,7 +1335,7 @@ int nextDataBlock(INODE *ip, int num)
 			}
 
 			//can't go any farther so just return 0;
-/*			if((*intp) == 0)
+		/*			if((*intp) == 0)
 			{
 				return 0;
 			}*/
@@ -1292,6 +1392,141 @@ int nextDataBlock(INODE *ip, int num)
 
 		//i dont think it can ever get to this line of code
 		return 0;
+}
+
+int make_dir()
+{
+	
+}
+
+int quit()
+{
+	/*printf("dir: %s\n",dirname(pwd()));
+	printf("base: %s\n", basename(pwd()));*/
+	exit(1);
+}
+
+int pressEnterToContinue()
+{
+	char line[2];
+	__fpurge(stdin);
+	fgets(line, 2, stdin);
+	__fpurge(stdin);
+}
+
+
+int decFreeBlocks(int dev)
+{
+  char buf[BLKSIZE];
+
+  // dec free data blocks count in SUPER and GD blocks
+  get_block(dev, SUPERBLOCK, buf);
+  sp = (SUPER *)buf;
+  sp->s_free_blocks_count--;
+  put_block(dev, SUPERBLOCK, buf);
+
+  get_block(dev, GDBLOCK, buf);
+  gp = (GD *)buf;
+  gp->bg_free_blocks_count--;
+  put_block(dev, GDBLOCK, buf);
+}
+
+int incFreeBlocks(int dev)
+{
+  char buf[BLKSIZE];
+
+  // dec free data blocks count in SUPER and GD blocks
+  get_block(dev, SUPERBLOCK, buf);
+  sp = (SUPER *)buf;
+  sp->s_free_blocks_count++;
+  put_block(dev, SUPERBLOCK, buf);
+
+  get_block(dev, GDBLOCK, buf);
+  gp = (GD *)buf;
+  gp->bg_free_blocks_count++;
+  put_block(dev, GDBLOCK, buf);
+}
+
+int balloc(int dev)
+{
+  int  i;
+  char buf[BLKSIZE];
+
+  // read inode_bitmap block
+  get_block(dev, bmap_block_G, buf);
+
+  for (i=0; i < num_blocks_G; i++){
+    if (tst_bit(buf, i)==0){
+       set_bit(buf,i);
+       decFreeBlocks(dev);
+
+       put_block(dev, bmap_block_G, buf);
+       return i+1;//return free data block num
+    }
+  }
+  printf("balloc(): no more free data blocks\n");
+  return -1;
+}
+
+int bdealloc(int dev, int block)
+{
+  int  i;
+  char buf[BLKSIZE];
+
+  // read inode_bitmap block
+  get_block(dev, bmap_block_G, buf);
+
+  if(block <= num_blocks_G && block >= 0)//don't mess with first 10 inodes
+  {
+  	i = clr_bit(buf, block - 1);
+
+  	if(i < 0)
+  	{
+  		printf("error: block ibit, %d, is already 0.\n", block);
+  		return -1;
+  	}
+
+  	put_block(dev, bmap_block_G, buf);
+  	incFreeBlocks(dev);
+
+  	return block;
+  }
+  else
+  {
+  	printf("can't delloc block bit, %d\n", block);
+  	return -1;
+  }
+}
+
+bmap(int fd)
+{
+  char buf[BLKSIZE];
+  int  bmap, nblocks;
+  int  i;
+
+  // read SUPER block
+  get_block(fd, SUPERBLOCK, buf);
+  sp = (SUPER *)buf;
+
+  nblocks = sp->s_blocks_count;
+  printf("nblocks = %d\n", nblocks);
+
+  // read Group Descriptor 0
+  get_block(fd, GDBLOCK, buf);
+  gp = (GD *)buf;
+
+  bmap = gp->bg_block_bitmap;
+  printf("blockbitmap = %d\n", bmap);
+
+  // read inode_bitmap block
+  get_block(fd, bmap, buf);
+
+  for (i=0; i < nblocks; i++){
+    (tst_bit(buf, i)) ?	putchar('1') : putchar('0');
+    if (i && (i % 8)==0)
+       printf(" ");
+  }
+  printf("\n");
 }
 
 #endif
