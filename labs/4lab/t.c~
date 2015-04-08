@@ -6,14 +6,14 @@
 #include <linux/ext2_fs.h>
 
 #define BLKSIZE 1024
-#define MAX_PATH_LEN 128
-#define MAX_PATH_PIECES 32
+#define MAX_PATH_LEN 256
+#define MAX_PATH_PIECES 64
 
 
 //define short TYPE, save typing efforts (note from Dr. K.C. Wang)
 typedef struct ext2_group_desc 	GD;
 typedef struct ext2_super_block 	SUPER;
-typedef struct ext2_inode 			INODE;
+typedef struct ext2_inode 	INODE;
 typedef struct ext2_dir_entry_2 	DIR;
 
 GD 	*gp;
@@ -97,7 +97,7 @@ int superCheck()
 
 }
 
-int addNullToDirName(char* name, int len)
+char* addNullToDirName(char* name, int len)
 {
 	char* return_name = (char*)malloc(sizeof(char)*(len+1));
 	int i = 0;
@@ -140,7 +140,7 @@ int main(int argc, char* argv[], char* env[])
 	int block_num, offset;
 	int found = 0, no_hope = 0;
 	int blocks = 0;
-
+	char temp;
 
 	char current_directory[128] = "/";
 
@@ -247,10 +247,18 @@ int main(int argc, char* argv[], char* env[])
 	while(cp < (data_buf + BLKSIZE))
 	{
 		//add null to dp->name
-		strcpy(dp_name, addNullToDirName(dp->name, dp->name_len));
+		//strcpy(dp_name, addNullToDirName(dp->name, dp->name_len));
 
-		printf("\t\t\t%-5d\t%-6d\t%-5d\t%s\n", 
-		dp->inode, dp->rec_len, dp->file_type, dp_name);
+
+		printf("\t\t\t%-5d\t%-6d\t%-5d\t", 
+		dp->inode, dp->rec_len, dp->file_type);
+
+		temp = dp->name[(dp->name_len)];
+		dp->name[(dp->name_len)] = 0;
+		
+		printf("%s\n", dp->name);
+
+		dp->name[(dp->name_len)] = temp;
 
 		cp+=(dp->rec_len);
 		dp = (DIR *)cp;
