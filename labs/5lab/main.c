@@ -25,7 +25,9 @@ int main(int argc, char* argv[], char* env[])
 
 	while(1)
 	{
-		printf("line :");
+		printf("\ntyos (/%s):", (char*)basename(pwd()));
+
+
 		bzero(line, MAX_PATH_LEN);
 		__fpurge(stdin);
 		fgets(line, MAX_PATH_LEN, stdin);
@@ -34,23 +36,26 @@ int main(int argc, char* argv[], char* env[])
 		tokCmd(line, myargv, &myargc);
 
 		if(!myargc) continue;
-		//printf("%s", myargv[0]);getchar();
-		printf("%d\n", myargc);
+
 		if(strcmp(myargv[0], "ls") == 0)
 		{
 			if(myargc < 2){
-				list_this(0);
+				ls_wrap(0);//ls this is a wrapper for ls
 			}
 			else{
-				printf("%s\n", myargv[1]);
-				printf("%s\n", myargv[1]);
-				printf("%s\n", myargv[1]);
-				list_this(myargv[1]);
+	
+				ls_wrap(myargv[1]);//ls this is a wrapper for ls
 			}
 		}
 		if(strcmp(myargv[0], "cd") == 0)
 		{
-
+			if(myargc < 2){
+				cd_wrap(0);
+			}
+			else{
+	
+				cd_wrap(myargv[1]);
+			}
 		}
 		if(strcmp(myargv[0], "pwd") == 0)
 		{
