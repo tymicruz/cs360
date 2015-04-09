@@ -150,13 +150,7 @@ int balloc(int dev);
 int bdealloc(int dev, int block);
 int bmap(int fd);
 int quit();
-int make_dir(char *npath);
 int mymakedir(MINODE *pip, char *name);
-int ilen(DIR *d);
-int enter_name(MINODE *pip, int myino, char *myname);
-int newDataBlock(MINODE *pip);
-int nameExists(MINODE *parent, char *myname);
-int mkdir_wrap(char *path);
 
 
 int get_block(int dev, int blk, char buf[ ]){
@@ -638,8 +632,6 @@ int getino(int dev, char *pathname)
 	int i = 0;
 	int more = 0;
 	int block_check = 0;
-
-	MINODE *mip;
 	
 
 	//printf("%s\n", pathname);
@@ -651,12 +643,9 @@ int getino(int dev, char *pathname)
 	}
 
 	//load first inode block into memory so we can get root
-	//get_block(fd, inode_begin_block_G, inode_buf);
-	mip = iget(dev, 2);
+	get_block(fd, inode_begin_block_G, inode_buf);
 
-	//ip = (INODE *)inode_buf + 1;//get first inode which is root
-	ip = &(mip->INODE);
-
+	ip = (INODE *)inode_buf + 1;//get first inode which is root
 	//load data block of root inode
 	get_block(fd, ip->i_block[block_check], data_buf);	
 	
@@ -681,14 +670,13 @@ int getino(int dev, char *pathname)
 		while((cp < (data_buf + BLKSIZE)))
 		{
 			//null terminate the dp->name field since there is no null char
-			printf("rec len: %-4d -> ", dp->rec_len);
+			printf("rec len: %d -> ", dp->rec_len);
 			temp = dp->name[dp->name_len];
 			dp->name[dp->name_len] = 0;
-			printf("%-10s ", dp->name);//getchar();
+			printf("%s\n", dp->name);//getchar();
 			//dir name match //
 			if(strcmp(path_pieces[search_count], dp->name) == 0)
 			{
-				printf("match ");
 				search_count++;
 				//printf("match:%s, %d more to go\n", dp->name, path_count - search_count);//getchar();
 				if(search_count < path_count)//keep looking, not at end of path
@@ -699,19 +687,15 @@ int getino(int dev, char *pathname)
 					dp->name[dp->name_len] = temp;//put char back that we moved
 					
 					//get inode of this thing we just found
-					//getInodeBlockNumberAndOffset(dp->inode, &block_num, &offset);
-					
-					iput(mip);
-					mip = iget(dev, dp->inode);
-					//get_block(fd, block_num, inode_buf);
+					getInodeBlockNumberAndOffset(dp->inode, &block_num, &offset);
+					get_block(fd, block_num, inode_buf);
+
 					//now we have inode of current path we've seen so far
-					ip = &(mip->INODE);//(INODE *)inode_buf + offset;
+					ip = (INODE *)inode_buf + offset;
 
 					if(!S_ISDIR(ip->i_mode))//cant search anymore because this isn't a dir
 					{
 						no_hope = 1;
-						printf(" X, not directory\n");
-						iput(mip);
 						//printf("path is at dead end cuz we at a file\n");
 						return 0;
 						//break out of inner loop and then will break out of outer because no_hope = 1;
@@ -719,7 +703,7 @@ int getino(int dev, char *pathname)
 					}
 				
 					//if match a directory, we go here
-					printf("keep looking\n");
+				
 					//get first data block of this dir that we just found
 					block_check = 0;
 					get_block(fd, ip->i_block[block_check], data_buf);
@@ -743,7 +727,7 @@ int getino(int dev, char *pathname)
 					//getInodeBlockNumberAndOffset(dp->inode, &block_num, &offset);
 					//get_block(fd, block_num, inode_buf);
 					//ip = (INODE *)inode_buf + offset;
-					iput(mip);
+
 					return dp->inode;
 					found = 1;
 				}	
@@ -753,7 +737,6 @@ int getino(int dev, char *pathname)
 			}
 			else
 			{
-				printf("continue ");
 				//MUST PUT THE CHAR BACK 	~!!!!!!!!! SUCH A STUPUD BUG
 				dp->name[dp->name_len] = temp;
 			}
@@ -767,22 +750,18 @@ int getino(int dev, char *pathname)
 			{
 				printf("end of buf, and we can't find\n");
 				no_hope = 1;
-				iput(mip);
 				return 0;
 				break;
 			}
 			else if(cp >= (data_buf + BLKSIZE))
 			{
-				printf("\n");
 				//check next data block if you didn't find it in this data block
 				get_block(fd, more, data_buf);
 				break;
 			}
-			printf("\n");
 		}
 	}
 
-	iput(mip);
 	//couldn't find dat ish
 	return 0;
 }
@@ -877,7 +856,7 @@ int findmyname(MINODE *parent, int myino, char *myname)
 	int more, block_check = 0, i = 0;
 
 	//if passed a null pointer
-	if (parent == 0){printf("wtf null mide in fmyname()\n");return 0;}
+	if (parent == 0){return 0;}
 
 	//int block_num, offset;
 	//idont need to get inode from disk because it is already in memory
@@ -921,10 +900,11 @@ int findmyname(MINODE *parent, int myino, char *myname)
 		//if there's more get it, else we'll break on the next outer loop
 		if(more)
 		{
-				get_block(parent->dev, more, data_buf);	
+				get_block(fd, more, data_buf);	
 	
 				dp = (DIR *)data_buf;
 				cp = data_buf;//same as cp = data_buf
+
 				//i could break here 
 		}
 	}
@@ -965,7 +945,7 @@ int findino(MINODE *mip, int *myino, int *parentino)
 			//null terminate dp->name so we can work with it
 			temp = dp->name[dp->name_len];
 			dp->name[dp->name_len] = 0;
-			//printf("%d cp:%d data_buf:%d dp->name_len:%d\n", more, cp, data_buf + BLKSIZE, dp->name_len);
+			//printf("%d cp:%d data_buff:%d dp->name_len:%d\n", more, cp, data_buf + BLKSIZE, dp->name_len);
 			//printf("%s\n", dp->name); getchar();
 
 			if(strcmp(dp->name, ".") == 0)
@@ -1015,7 +995,7 @@ int findino(MINODE *mip, int *myino, int *parentino)
 int mount_root()
 {
 	int me, parent;
-	char myname[32] = {0};
+	char myname[32];
 
 	
 	fd = open(disk, O_RDWR);
@@ -1040,13 +1020,6 @@ int mount_root()
 	//printf("%d", (char*)ctime(running->cwd->INODE.i_ctime));
 	//list_dir(running->cwd);
 	//ls("./");
-	strcpy(myname,"money/");
-	
-	mkdir_wrap(myname);
-
-	//		strcpy(myname,"/money/");
-
-	//	make_dir(myname);
 }
 
 //used in ls
@@ -1056,6 +1029,7 @@ int list_file(MINODE *mip, char *name)
 	INODE *ip = &(mip->INODE);
 	
   int i;
+
 	//print file mode
   if ((ip->i_mode & 0xF000) == 0x8000)
      printf("%c",'-');
@@ -1117,6 +1091,7 @@ int list_dir(MINODE *mip)
 	MINODE *cip;
 	char *cp, temp;
 	int block_check = 0, more = 0;
+
 	ip = &(mip->INODE);
 
 	more = nextDataBlock(&(mip->INODE), block_check++);
@@ -1141,7 +1116,6 @@ int list_dir(MINODE *mip)
 			iput(cip);
 			cp+=dp->rec_len;
 			dp=(DIR*)cp;
-			//printf("cp->%d, data_buf + bs->%d", cp, data_buf + BLKSIZE);
 		}
 		
 		more = nextDataBlock(&(mip->INODE), block_check++);
@@ -1228,7 +1202,7 @@ int cd(char *path)
 		iput(running->cwd);
 		printf("*cd to root*\n");
 		running->cwd = mip;
-		return 1;
+		return;
 		//cd to rood
 	}
 
@@ -1238,7 +1212,7 @@ int cd(char *path)
 	if(!ino) 
 	{
 		printf("can't cd to that garbage\n");
-		return -1;
+		return;
 	}
 
 	mip = iget(fd, ino);
@@ -1248,7 +1222,7 @@ int cd(char *path)
 	{
 		iput(mip);
 		printf("can't cd to a non-directory file\n");
-		return -1;
+		return;
 	}
 	
 	//file is a directory at this point
@@ -1258,25 +1232,22 @@ int cd(char *path)
 	//set running cwd to in memory inode that we just got 
 	running->cwd = mip;
 	printf("cd to %s success\n", pwd());
-	return 1;
 //printf("cd succes\n");
 }
 
-//makes sure to give cd correct input
 int cd_wrap(char *path)
 {
 	char cdpath[MAX_PATH_LEN] = "";
-	int success = 0;
 
 	if(path == 0)
 	{
-		return cd(0);//change dir to root
+		cd(0);//change dir to root
 		return;
 	}
 	//we'll ls from root
 	if(path[0] == '/')
 	{
-		return cd(path);
+		cd(path);
 		return;
 	}
 
@@ -1289,7 +1260,7 @@ int cd_wrap(char *path)
 
 	//printf("try to cd to this:%s\n", cdpath);
 
-	return cd(cdpath);
+	cd(cdpath);
 }
 //char cwd[256];
 
@@ -1337,16 +1308,11 @@ char* pwd()
 	path = (char *)malloc(sizeof(char) * (strlen(rpath) + 1));
 	path[0] = 0;
 
-	//comment this i dont know what i was doing here
-	//reverseing path
-	//i'm reversing path and storing in another char array
-	while(strlen(cp))//until cp is blank
+	while(strlen(cp))
 	{
 		strcat(path, "/");
 		strcat((char*)path, cp);
-
-		//then chop rpath so we can get a new base path
-		//note that r path is originally the backwards path of rpath
+		//printf("--<>%s<>--\n", cp);
 		rpath[strlen((char*)rpath) - strlen((char*)basename(rpath)) - 1] = 0;
 		cp = (char*)basename(rpath);
 	}
@@ -1354,77 +1320,20 @@ char* pwd()
 	return (char*)path;
 }
 
-int mkdir_wrap(char *path)
+/*int make_dir()
 {
-	if(path == 0)
-	{
-		printf("give something to make\n");
-		return -1;
-	}
+	char *pathname = 0, *parent;
 
-	while(strlen(path) > 1 && path[strlen(path) - 1] == '/')
-	{
-		//take off excess '/'
-		printf("%s\n", path);
-		path[strlen(path) - 1] = 0;
-	}
 
-	make_dir(path);
+	MINODE *mip = running->cwd;
 
-}
-
-int make_dir(char *npath)
-{
-	char *ogpath = 0, parent[MAX_PATH_LEN], child[MAX_PATH_LEN];
-	int check = 0;
-
-	MINODE *pip;// = running->cwd;
-
-	printf("herex-->1");getchar();
 	//malloc or make some room for pathname to hold pwd
-	ogpath = (char *)malloc(sizeof(char) * (strlen(pwd() + 1) + 1));
-	strcpy(ogpath, pwd());
-	printf("%s\n", ogpath);
+	pathname = (char *)malloc(sizeof(char) * (strlen(pwd()) + 1));
+	strcpy(pathname, pwd());
 
-	printf("herex-->2");getchar();
-	printf("p:%s\n", npath);
-	//printf("%s\n", basename(npath));
-	//child = (char *)malloc(sizeof(char) * (strlen((char*)basename(npath)) + 1));
-	strcpy(child, (char*)basename(npath));
-	printf("child:%s\n", child);
+	//printf("%s\n", pathname);
 
-	if(strlen(child) == 0)
-	{
-		printf("houston we have a problem, can't make dir here\n");
-		return -1;
-	}
-
-	printf("herex-->2");getchar();
-	printf("p:%s\n", npath);
-	//printf("%s\n", dirname(npath));
-	//parent = (char *)malloc(sizeof(char) * (strlen(dirname(npath)) + 1));
-	strcpy(parent, (char*)dirname(npath));
-	printf("prnt:%s\n", parent);
-
-
-	//change dir to parent dir
-	check = cd_wrap(parent);
-
-	if(check < 0)
-	{
-		printf("can't make this dir, bad path\n");
-		return -1;
-	}
-
-	//
-	pip = running->cwd;
-
-//try to make dir in parent directory, may fail if it exists or not enough data or inodes
-	mymakedir(pip, child);
-
-	//goback to original working directory
-	cd_wrap(ogpath);
-}
+}*/
 
 int mymakedir(MINODE *pip, char *name)
 {
@@ -1447,205 +1356,39 @@ int mymakedir(MINODE *pip, char *name)
 		return -1;
 	}
 
-	//make sure name doesn't exist already
-	if(nameExists(pip, name))
-	{
-		printf("dir already exists\n");
-		return -1;
-	}
-
 	//get this ino from memory
 	//this ino will be blank
 	//we need to set all of it's attributes
 	mip = iget(pip->dev, ino);
 
 	//now we have to make this inode a dir
-	ip = &(mip->INODE);
 	
-	ip->i_mode = 0x41ED; //or 040755
-	ip->i_uid = running->uid;
-	ip->i_gid = running->gid;
-	ip->i_size = BLKSIZE;
-	ip->i_links_count = 2;
-	ip->i_atime = time(0L);
-	ip->i_ctime = time(0L);
-	ip->i_mtime = time(0L);
-	ip->i_blocks = 2;//linux blocks count in 512-byte chunks
-	ip->i_block[0] = bno;
+	mip->INODE.i_mode = 0x41ED; //or 040755
+	mip->INODE.i_uid = running->uid;
+	mip->INODE.i_gid = running->gid;
+	mip->INODE.i_size = BLKSIZE;
+	mip->INODE.i_links_count = 2;
+	mip->INODE.i_atime = time(0L);
+	mip->INODE.i_ctime = time(0L);
+	mip->INODE.i_mtime = time(0L);
+	mip->INODE.i_blocks = 2;//linux blocks count in 512-byte chunks
+	mip->INODE.i_block[0] = bno;
 
 	for(i = 1; i <= 14; i++)
 	{
-		ip->i_block[i] = 0;
+		mip->INODE.i_block[i] = 0;
 	}
 
 	mip->dirty = 1;//mark bit as dirty so it gets written back to disk;
 
 	iput(mip);
 
-	//write . and .. to data block
-	//bzero(data_buf, BLKSIZE);
-	get_block(pip->dev, bno, data_buf);
-
+	//get();
+	bzero(data_buf, BLKSIZE);
 	dp = (DIR *)data_buf;
 	cp = data_buf;
-
-	//write .
-	dp->inode = mip->ino;
-	dp->rec_len = 12;
-	dp->name_len = 1;
-	//dp->file_type = 0;
-	dp->name[0] = '.';
-
-	//increment dp
-	cp += dp->rec_len;
-	dp = (DIR*)cp;
-
-		//write ..
-	dp->inode = pip->ino;
-	dp->rec_len = BLKSIZE - 12;//give 2nd dir entry the rest
-	dp->name_len = 2;
-	//dp->file_type = 0;
-	dp->name[0] = '.';
-	dp->name[1] = '.';
-
-	//write buf to disk
-	//i pray that this data_buf is written to correctly, before it goes to disk
-	put_block(pip->dev, bno, data_buf);
-	printf("new ino will be %d\n", ino);
-	enter_name(pip, ino, name);
 }
 
-int enter_name(MINODE *pip, int myino, char *myname)
-{
-	int block_check = 0, i = 0;
-	int more = 0, ideal = 0, leftover = 0, myideal = 0;
-	char *cp, temp;
-
-	myideal=strlen(myname);
-	myideal=4*((8 + myideal +3)/4);
-
-	more = nextDataBlock(&(pip->INODE), block_check++);
-	//more is basically i_block[i]
-
-	while(more)
-	{	
-		get_block(pip->dev, more, data_buf);
-		printf("looking at data block %d\n", more);
-		//step through this block to see if we can find an opening
-		dp = (DIR*)data_buf;
-		cp = data_buf;
-
-		while(cp + dp->rec_len < data_buf + BLKSIZE)
-		{
-			temp = dp->name[dp->name_len];
-			dp->name[dp->name_len] = 0;
-			if(strcmp(dp->name, myname) == 0)
-			{
-				dp->name[dp->name_len] = temp;
-				printf("this already exits\n");
-				return -1;
-			}
-			printf("%s ", dp->name);
-			dp->name[dp->name_len] = temp;
-			printf("ino(%d) rec_len(%d)\n", dp->inode, dp->rec_len);
-
-			cp+=dp->rec_len;
-			dp = (DIR*)cp;
-		}
-		printf("end ino(%d) rec_len(%d)\n", dp->inode, dp->rec_len);
-		//now dp points to the last entry in data block
-		ideal = ilen(dp);
-		leftover = (dp->rec_len) - ideal;
-
-		if(leftover >= myideal)
-		{
-			printf("found a spot!\n");
-			//yeah we can fit in this data block!
-			//increment dp pointer, set dp rec len to its ideal
-			dp->rec_len = ideal;
-			printf("they only need %d\n", ideal);
-			cp+=ideal;
-			dp = (DIR*)cp;
-
-			//write this entry in
-			dp->inode = myino;
-			dp->rec_len = leftover;//ideal len of prev entry, entry gives up it's excess fat
-			dp->name_len = strlen(myname);
-			printf("new file %s: ino %d, rec len: %d, namelen: %d", myname, dp->inode, dp->rec_len, dp->name_len);
-			getchar();
-			//dp->file_type = 0;
-			//dp->name[0] = '.';
-			//write name to dp
-			for(i = 0; i < dp->name_len; i++)
-			{
-				dp->name[i] = myname[i];
-			}
-			cp = data_buf;
-			cp += 52;
-			dp = (DIR*)cp;
-
-			printf("new inode %d to %d!!!!!\n", dp->inode, more);
-			//put this edited data_buf back to disk
-			put_block(pip->dev, more, data_buf);
-			return;
-		}
-
-		more = nextDataBlock(&(pip->INODE), block_check++);
-	}
-
-	block_check--;//this is the i_block that we need to balloc for
-	
-	if(block_check < 0)
-	{
-		printf("wtf happened in enter_name()\n");
-		return -1;
-	}
-	//increment parent INO SIZE BY BLKSIZE!!!!!!!!(done in newDataBlock)
-	//more must but 0 now
-	//if(more == 0)
-
-		i = newDataBlock(pip);//this will increment pip size and allocate
-
-		if(i <= 0)
-		{
-			printf("no more blocks to allocate");
-			return;
-		}
-
-		get_block(pip->dev, i, data_buf);
-
-		dp = (DIR*)data_buf;
-
-			//write this entry in
-		dp->inode = myino;
-		dp->rec_len = BLKSIZE;//ideal len of prev entry, entry gives up it's excess fat
-		dp->name_len = strlen(myname);
-		//dp->file_type = 0;
-		//dp->name[0] = '.';
-		//write name to dp
-		for(i = 0; i < dp->name_len; i++)
-		{
-			dp->name[i] = myname[i];
-		}
-		//put this edited data_buf back to disk
-		put_block(pip->dev, i, data_buf);
-		return;		
-
-
-}
-
-//get ideal len of dir entry
-int ilen(DIR *d)
-{
-	if(dp == 0)
-	{
-		return -1; //dp is null
-	}
-
-	int need_len = 4*((8 + d->name_len +3)/4);
-
-	return need_len;
-}
 
 int tokenize(char *path, char *pieces[], int *npieces)
 {
@@ -1729,8 +1472,7 @@ int tokCmd(char *line, char *myargv[], int *myargc)
 	myargv[(*myargc)] = 0;//null terminate array of strings
 }
 
-//update this to work with current device
-//currently only works for inodes in root device
+
 int nextDataBlock(INODE *ip, int num)
 {
 		int i = 0, j = 0;		
@@ -1846,6 +1588,7 @@ int nextDataBlock(INODE *ip, int num)
 		return 0;
 }
 
+
 int quit()
 {
 	/*printf("dir: %s\n",dirname(pwd()));
@@ -1861,216 +1604,7 @@ int pressEnterToContinue()
 	__fpurge(stdin);
 }
 
-//will return the blk number of new allocated block
-int newDataBlock(MINODE *pip)
-{
-		int i = 0, j = 0;		
-		char level1[BLKSIZE];
-		char level2[BLKSIZE];
-		int *intp, *intp2; //int pointers for access data block data in buffer
-		int k = 0;
-		int count = 0, blocks = 0;
 
-		ip = &(pip->INODE);
-
-		//keep current size until we 
-		//check all blocks
-		if(ip->i_size % BLKSIZE)
-		{
-			blocks++;
-		}
-
-		blocks += ip->i_size / BLKSIZE;
-
-		for(i = 0; i < 12 && i < blocks; i++, count++)
-		{
-			if(ip->i_block[i] == 0)
-			{
-				k = balloc(pip->dev);
-				pip->dirty = 1;
-				ip->i_block[i] = k;
-				ip->i_size+= BLKSIZE;
-				return k;
-			}
-		}
-
-		//block we're looking for doesn't exist
-		//I should be 12 or less at this point
-		if(i >= blocks)
-		{
-				k = balloc(pip->dev);
-				pip->dirty = 1;
-				ip->i_block[i] = k;
-				ip->i_size+= BLKSIZE;
-				return k;
-		}
-
-		//get blocks left
-		blocks-= i;
-
-		//i must be 12 here
-		j = (ip->i_block[12]);
-
-		//12 only has only level of indirect
-		get_block(pip->dev, j, level1);
-
-		intp = (int *)level1;
-		i = 0;
-
-		//keep looking for the block you need
-		while((int)intp < (int)level1 + (int)BLKSIZE && i < blocks && intp != 0 && *intp != 0)
-		{
-			//won't ever have this, the i < blocks will cause break
-			if((*intp) == 0)
-			{	
-				k = balloc(pip->dev);
-				(*intp) = k;
-				pip->dirty = 1;
-				ip->i_size+= BLKSIZE;
-				get_block(pip->dev, j, level1);
-				return k;
-			}
-
-			//can't go any farther so just return 0;
-		/*			if((*intp) == 0)
-			{
-				return 0;
-			}*/
-
-			intp++;
-			i++;	
-			count++;
-		}
-
-		//block we're looking for doesn't exist for this inode
-		//
-		if(i >= blocks)
-		{
-				k = balloc(pip->dev);
-				(*intp) = k;
-				pip->dirty = 1;
-				ip->i_size+= BLKSIZE;
-				get_block(pip->dev, j, level1);
-				return k;
-		}
-
-		//not going this far  right now
-		printf("need double indirect, not doing that bull sh\n");
-		return -10;
-		//get blocks left
-		blocks-= i;
-
-		j = ip->i_block[13];
-
-		//block 13 has double indirect blocks
-		get_block(fd, j, level1);
-		intp = (int*)level1;
-		i = 0;
-
-		while((int)intp < (int)level1 + (int)BLKSIZE && i < blocks && intp != 0 && *intp != 0)
-		{
-			get_block(fd, *intp, level2);
-			intp2 = (int *)level2;
-
-			while((int)intp2 < (int)level2 + (int)BLKSIZE && i < blocks && intp2 != 0 && *intp2 != 0)
-			{
-				if((*intp2) == 0)
-				{
-				k = balloc(pip->dev);
-				pip->dirty = 1;
-				ip->i_size+= BLKSIZE;
-				return k;
-				}
-
-				//can't go any further so just return now
-				/*if((*intp2) == 0)
-				{
-					return 0;
-				}	*/
-				intp2++;//go to next in level two	
-				i++;
-				count++;
-			}
-			intp++;//go to next in level one
-		}	
-
-		blocks-= i;
-
-		if(i >= blocks)
-		{
-				k = balloc(pip->dev);
-				pip->dirty = 1;
-				ip->i_size+= BLKSIZE;
-				return k;
-		}
-
-		if(blocks > 0)
-		{
-			printf("we need trip indirect which is probably wrong.\n");
-			return -1;
-		} //we need to go to tripple indirect blocks
-
-		//i dont think it can ever get to this line of code
-		printf("how tf did we get here?\n");
-		return 0;
-}
-
-int nameExists(MINODE *parent, char *myname)
-{
-	char *cp, temp;
-	int more, block_check = 0, i = 0;
-
-	//if passed a null pointer
-	if (parent == 0){printf("wtf null mide in fmyname()\n");return 0;}
-
-	//int block_num, offset;
-	//idont need to get inode from disk because it is already in memory
-	//getInodeBlockNumberAndOffset(parent->ino, &block_num, &offset);
-	
-		//ip = (INODE *)inode_buf + 1;//get first inode which is root
-	//load data block of root inode
-	get_block(fd, (parent->INODE).i_block[block_check], data_buf);	
-	
-	dp = (DIR *)data_buf;
-	cp = data_buf;//same as cp = data_buf
-
-	more = nextDataBlock(&(parent->INODE), block_check++);
-	
-	//make sure we check all data blocks of dir, not just i_block[0]
-	while(more)
-	{
-		more = nextDataBlock(&(parent->INODE), block_check++);
-
-		while(cp < data_buf + BLKSIZE)
-		{
-			temp = dp->name[dp->name_len];
-			dp->name[dp->name_len] = 0;
-
-			if(strcmp(dp->name, myname) == 0)
-			{
-				dp->name[dp->name_len] = temp;
-				return 1;
-			}	
-
-			dp->name[dp->name_len] = temp;
-			//move cp and dp pointers
-			cp+= dp->rec_len;
-			dp = (DIR*)cp;
-		}
-
-		//if there's more get it, else we'll break on the next outer loop
-		if(more)
-		{
-				get_block(parent->dev, more, data_buf);	
-	
-				dp = (DIR *)data_buf;
-				cp = data_buf;//same as cp = data_buf
-				//i could break here 
-		}
-	}
-
-	return 0;
-}
 
 #endif
 

@@ -1,2 +1,4 @@
+rm mydisk
+cp frisbee mydisk
 cc -o lab5.out main.c h.h
 lab5.out mydisk

@@ -7,12 +7,6 @@ int main(int argc, char* argv[], char* env[])
 	char line[MAX_PATH_LEN] = "";
 	char *myargv[MAX_PATH_PIECES]={0};
 	int myargc, i;
-	/*char test1[100] = "/";
-	char test2[100] = "/";
-
-	printf("%s\n", dirname(test1));
-	printf("%s\n", dirname(test2));
-getchar();*/
 
 	if(argc > 1)
 	{
