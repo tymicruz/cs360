@@ -43,6 +43,8 @@ getchar();*/
 
 		if(!myargc) continue;
 
+		printf("%s\n", myargv[0]);
+
 		if(strcmp(myargv[0], "ls") == 0)
 		{
 			if(myargc < 2){
@@ -71,6 +73,37 @@ getchar();*/
 			else{
 	
 				mkdir_wrap(myargv[1]);
+			}
+		}
+		if(strcmp(myargv[0], "rmdir") == 0)
+		{
+			if(myargc < 2){
+				rmdir_wrap(0);
+			}
+			else{
+	
+				rmdir_wrap(myargv[1]);
+			}
+		}
+		if(strcmp(myargv[0], "unlink") == 0)
+		{
+			if(myargc < 2){
+				unlink_wrap(0);
+			}
+			else{
+	
+				unlink_wrap(myargv[1]);
+			}
+		}
+		if(strcmp(myargv[0], "creat") == 0)
+		{
+			printf("creating\n");
+			if(myargc < 2){
+				creat_wrap(0);
+			}
+			else{
+	
+				creat_wrap(myargv[1]);
 			}
 		}
 		if(strcmp(myargv[0], "pwd") == 0)

@@ -152,11 +152,24 @@ int bmap(int fd);
 int quit();
 int make_dir(char *npath);
 int mymakedir(MINODE *pip, char *name);
+int mkdir_wrap(char *path);
 int ilen(DIR *d);
 int enter_name(MINODE *pip, int myino, char *myname);
 int newDataBlock(MINODE *pip);
 int nameExists(MINODE *parent, char *myname);
-int mkdir_wrap(char *path);
+int creato(char *npath);
+int mycreat(MINODE *pip, char *name);
+int creat_wrap(char *path);
+int remove_dir(char *npath);
+int myremovedir(MINODE *pip, int ino);
+int rmdir_wrap(char *path);
+int emptyDir(MINODE *pip, MINODE *mip);
+int rm_child(MINODE *pip, int myino);
+int unlink(char *npath);
+int myunlink(MINODE *pip, int ino);
+int unlink_wrap(char *path);
+
+
 
 
 int get_block(int dev, int blk, char buf[ ]){
@@ -684,7 +697,7 @@ int getino(int dev, char *pathname)
 			printf("rec len: %-4d -> ", dp->rec_len);
 			temp = dp->name[dp->name_len];
 			dp->name[dp->name_len] = 0;
-			printf("%-10s ", dp->name);//getchar();
+			printf("%-15s -> target(%s)", dp->name, path_pieces[search_count]);//getchar();
 			//dir name match //
 			if(strcmp(path_pieces[search_count], dp->name) == 0)
 			{
@@ -1481,6 +1494,11 @@ int mymakedir(MINODE *pip, char *name)
 	//bzero(data_buf, BLKSIZE);
 	get_block(pip->dev, bno, data_buf);
 
+	//increment pip links count
+	pip->INODE.i_links_count++;
+	pip->dirty = 1;
+
+
 	dp = (DIR *)data_buf;
 	cp = data_buf;
 
@@ -1566,20 +1584,19 @@ int enter_name(MINODE *pip, int myino, char *myname)
 			dp->inode = myino;
 			dp->rec_len = leftover;//ideal len of prev entry, entry gives up it's excess fat
 			dp->name_len = strlen(myname);
-			printf("new file %s: ino %d, rec len: %d, namelen: %d", myname, dp->inode, dp->rec_len, dp->name_len);
-			getchar();
-			//dp->file_type = 0;
-			//dp->name[0] = '.';
+	/*		printf("new file %s: ino %d, rec len: %d, namelen: %d", myname, dp->inode, dp->rec_len, dp->name_len);
+			getchar();*/
+
 			//write name to dp
 			for(i = 0; i < dp->name_len; i++)
 			{
 				dp->name[i] = myname[i];
 			}
-			cp = data_buf;
-			cp += 52;
-			dp = (DIR*)cp;
+			//cp = data_buf;
+			//cp += 52;//wtf is this 52
+			//dp = (DIR*)cp;
 
-			printf("new inode %d to %d!!!!!\n", dp->inode, more);
+			//printf("new inode %d to %d!!!!!\n", dp->inode, more);
 			//put this edited data_buf back to disk
 			put_block(pip->dev, more, data_buf);
 			return;
@@ -1601,6 +1618,8 @@ int enter_name(MINODE *pip, int myino, char *myname)
 
 		i = newDataBlock(pip);//this will increment pip size and allocate
 
+		printf("new data block: %d\n", i);
+		getchar();
 		if(i <= 0)
 		{
 			printf("no more blocks to allocate");
@@ -1625,8 +1644,6 @@ int enter_name(MINODE *pip, int myino, char *myname)
 		//put this edited data_buf back to disk
 		put_block(pip->dev, i, data_buf);
 		return;		
-
-
 }
 
 //get ideal len of dir entry
@@ -1843,6 +1860,17 @@ int nextDataBlock(INODE *ip, int num)
 
 int quit()
 {
+	int i = 0;
+
+	for(i=0; i < NMINODES; i++)
+	{
+		if(minode[i].refCount > 1)
+		{
+			minode[i].refCount = 1;
+			iput(&minode[i]);
+		}
+
+	}
 	/*printf("dir: %s\n",dirname(pwd()));
 	printf("base: %s\n", basename(pwd()));*/
 	exit(1);
@@ -2066,6 +2094,514 @@ int nameExists(MINODE *parent, char *myname)
 
 	return 0;
 }
+
+int creato(char *npath)
+{
+	char *ogpath = 0, parent[MAX_PATH_LEN], child[MAX_PATH_LEN];
+	int check = 0;
+
+	MINODE *pip;// = running->cwd;
+
+	//printf("herex-->1");getchar();
+	ogpath = (char *)malloc(sizeof(char) * (strlen(pwd() + 1) + 1));
+	strcpy(ogpath, pwd());
+	//printf("%s\n", ogpath);
+
+	//printf("herex-->2");getchar();
+	//printf("p:%s\n", npath);
+	strcpy(child, (char*)basename(npath));
+	//printf("child:%s\n", child);
+
+	if(strlen(child) == 0)
+	{
+		printf("houston we have a problem, can't make dir here\n");
+		return -1;
+	}
+
+	//printf("herex-->2");getchar();
+	//printf("p:%s\n", npath);
+	strcpy(parent, (char*)dirname(npath));
+	//printf("prnt:%s\n", parent);
+
+
+	//change dir to parent dir
+	check = cd_wrap(parent);
+
+	if(check < 0)
+	{
+		printf("can't make this file, bad path\n");
+		return -1;
+	}
+
+	//
+	pip = running->cwd;
+
+	//try to make dir in parent directory, may fail if it exists or not enough data or inodes
+	mycreat(pip, child);
+
+	//goback to original working directory
+	cd_wrap(ogpath);
+}
+
+int mycreat(MINODE *pip, char *name)
+{
+	int i, ino;
+	char *cp;
+	MINODE *mip;
+
+	if(pip == 0) 
+	{
+		printf("wtf parent mip is null\n");
+		return -1;
+	}
+
+	ino = ialloc(pip->dev);
+	//bno = balloc(pip->dev);
+
+	if(ino < 0)
+	{
+		printf("no room for file: ino %d\n", ino);
+		return -1;
+	}
+
+	//make sure name doesn't exist already
+	if(nameExists(pip, name))
+	{
+		printf("file already exists\n");
+		return -1;
+	}
+
+	//get this ino from memory
+	//this ino will be blank
+	//we need to set all of it's attributes
+	mip = iget(pip->dev, ino);
+
+	//now we have to make this inode a dir
+	ip = &(mip->INODE);
+	
+	ip->i_mode = 0x81A4; //or 040755
+	ip->i_uid = running->uid;
+	ip->i_gid = running->gid;
+	ip->i_size = 0;
+	ip->i_links_count = 1;
+	ip->i_atime = time(0L);
+	ip->i_ctime = time(0L);
+	ip->i_mtime = time(0L);
+	ip->i_blocks = 2;//linux blocks count in 512-byte chunks
+	//ip->i_block[0] = bno;
+
+	for(i = 0; i <= 14; i++)
+	{
+		ip->i_block[i] = 0;
+	}
+
+	mip->dirty = 1;//mark bit as dirty so it gets written back to disk;
+
+	iput(mip);
+
+	printf("new ino will be %d\n", ino);
+	enter_name(pip, ino, name);
+}
+
+int creat_wrap(char *path)
+{
+	if(path == 0)
+	{
+		printf("give something to make\n");
+		return -1;
+	}
+
+	while(strlen(path) > 1 && path[strlen(path) - 1] == '/')
+	{
+		//take off excess '/'
+		printf("%s\n", path);
+		path[strlen(path) - 1] = 0;
+	}
+
+		creato(path);
+}
+
+int rmdir_wrap(char *path)
+{
+	int myino = 0;
+
+	if(path == 0)
+	{
+		printf("give something to remove\n");
+		return -1;
+	}
+
+	while(strlen(path) > 1 && path[strlen(path) - 1] == '/')
+	{
+		//take off excess '/'
+		printf("%s\n", path);
+		path[strlen(path) - 1] = 0;
+	}
+
+	remove_dir(path);
+
+}
+
+int remove_dir(char *npath)
+{
+	char *ogpath = 0, parent[MAX_PATH_LEN], child[MAX_PATH_LEN], rmpath[MAX_PATH_LEN];
+	int check = 0;
+	int myino = 0;
+
+
+	MINODE *pip, *mip;// = running->cwd;
+
+	//printf("herex-->1");getchar();
+	ogpath = (char *)malloc(sizeof(char) * (strlen(pwd() + 1) + 1));
+	strcpy(ogpath, pwd());
+	printf("%s\n", ogpath);
+
+	//printf("herex-->2");getchar();
+	printf("p:%s\n", npath);
+	strcpy(child, (char*)basename(npath));
+	printf("child:%s\n", child);
+
+	if(strlen(child) == 0)
+	{
+		printf("houston we have a problem, can't rm dir\n");
+		return -1;
+	}
+
+	//printf("herex-->2");getchar();
+	printf("p:%s\n", npath);
+	strcpy(parent, (char*)dirname(npath));
+	printf("prnt:%s\n", parent);
+
+
+
+	//change dir to parent dir
+	check = cd_wrap(parent);
+
+	if(check < 0)
+	{
+		printf("can't rm this no existent dir, bad path\n");
+		return -1;
+	}
+
+	//
+	pip = running->cwd;
+	strcpy(rmpath, "");
+	strcat(rmpath, pwd());
+	strcat(rmpath, "/");
+	strcat(rmpath, child);
+	printf("child's path:%s\n", rmpath);
+
+	//see if this child has a path
+	myino = getino(pip->dev, rmpath);
+
+	//try to make dir in parent directory, may fail if it exists or not enough data or inodes
+	myremovedir(pip, myino);
+
+	//goback to original working directory
+	cd_wrap(ogpath);
+}
+
+int myremovedir(MINODE *pip, int myino)
+{
+	//in this function we will always be in the parent directory
+	//pwd is where the thing is 
+	int i;
+	char *cp;
+	MINODE *mip;
+
+	if(myino == 0)
+	{
+		printf("this dir doesn't exist\n");
+		return -1;
+	}
+
+	if(pip == 0) 
+	{
+		printf("wtf parent mip is null\n");
+		return -1;
+	}
+
+	mip = iget(pip->dev, myino);
+
+	if(!S_ISDIR(mip->INODE.i_mode))
+	{
+		printf("not a dir, can't remove\n");
+		return -1;
+	}
+
+	//we know it exists at this points,but doesnt hurt to check again
+
+	if(!emptyDir(pip, mip))
+	{
+		printf("not an empty dir!\n");
+		return -1;
+	}
+
+	if(mip->refCount > 1)
+	{
+		printf("BUSY refCount: %d. comeback later",mip->refCount);
+		return -1;
+	}
+	//at this point file is an empty dir and not busyz
+
+
+	//deallocate it's blocks
+  for (i=0; i<12; i++){
+    if (mip->INODE.i_block[i]==0)
+        continue;
+      bdealloc(mip->dev, mip->INODE.i_block[i]);
+   }
+
+  idealloc(mip->dev, mip->ino);
+  iput(mip); //(which clears mip->refCount = 0);
+
+
+  rm_child(pip, myino);
+
+	getchar();
+	//exit(1);
+}
+
+int rm_child(MINODE *pip, int myino)
+{
+	char *cp; 
+	int more = 0, block_check = 0;
+	int prec_len = 0, giveup = 0;
+
+	more = nextDataBlock(&(pip->INODE), block_check++);
+
+	while(more)
+	{
+		get_block(pip->dev, more, data_buf);
+		dp = (DIR *)data_buf;
+		cp = data_buf;
+
+		while((int)cp < (int)data_buf + BLKSIZE)
+		{
+			if(dp->inode == myino)
+			{
+				printf("found ino(%d) to remove!!\n", myino);
+				//we are point are the dir entry to remove
+				if((int)cp == (int)data_buf)
+				{
+					printf("it is first entry\n");
+				}
+				else if ((int)cp < (int)data_buf + BLKSIZE)
+				{
+					printf("it is last entry\n");
+					giveup = dp->rec_len;
+					printf("give %d\n", giveup);
+
+					//go back to previous
+					cp-=prec_len;
+					dp = (DIR*)cp;
+
+					//give previous entry your love
+					dp->rec_len+=giveup;
+					//printf("give %d", giveup);
+
+				}
+
+				put_block(pip->dev, more, data_buf);
+
+				return 0;
+			}
+
+			prec_len = dp->rec_len;
+
+			cp+=dp->rec_len;
+			dp = (DIR*)cp;
+		}
+
+		prec_len = 0;
+		more = nextDataBlock(&(pip->INODE), block_check++);
+	}
+
+	printf("couldn't find");
+	return -1;
+}
+
+int emptyDir(MINODE *pip, MINODE *mip)
+{
+	char *cp; 
+	int more = 0, block_check = 0;
+
+	if(!S_ISDIR(mip->INODE.i_mode))
+	{
+		printf("not a dir\n");
+		return 0;
+	}
+
+	more = nextDataBlock(&(mip->INODE), block_check++);
+
+	while(more)
+	{
+		get_block(mip->dev, more, data_buf);
+		dp = (DIR *)data_buf;
+		cp = data_buf;
+
+		while((int)cp < (int)data_buf + BLKSIZE)
+		{
+			if(dp->inode != pip->ino && dp->inode != mip->ino)
+			{
+				printf("not empty\n");
+				return 0;
+			}
+
+
+			cp+=dp->rec_len;
+			dp = (DIR*)cp;
+		}
+
+		more = nextDataBlock(&(mip->INODE), block_check++);
+	}
+	//dir is empty
+	printf("is empty\n");
+	return 1;
+}
+
+int unlink_wrap(char *path)
+{
+	int myino = 0;
+
+	if(path == 0)
+	{
+		printf("give something to remove\n");
+		return -1;
+	}
+
+	while(strlen(path) > 1 && path[strlen(path) - 1] == '/')
+	{
+		//take off excess '/'
+		printf("%s\n", path);
+		path[strlen(path) - 1] = 0;
+	}
+
+	unlink(path);
+
+}
+
+int unlink(char *npath)
+{
+	char *ogpath = 0, parent[MAX_PATH_LEN], child[MAX_PATH_LEN], rmpath[MAX_PATH_LEN];
+	int check = 0;
+	int myino = 0;
+
+
+	MINODE *pip, *mip;// = running->cwd;
+
+	//printf("herex-->1");getchar();
+	ogpath = (char *)malloc(sizeof(char) * (strlen(pwd() + 1) + 1));
+	strcpy(ogpath, pwd());
+	printf("%s\n", ogpath);
+
+	//printf("herex-->2");getchar();
+	printf("p:%s\n", npath);
+	strcpy(child, (char*)basename(npath));
+	printf("child:%s\n", child);
+
+	if(strlen(child) == 0)
+	{
+		printf("houston we have a problem, can't unlink\n");
+		return -1;
+	}
+
+	//printf("herex-->2");getchar();
+	printf("p:%s\n", npath);
+	strcpy(parent, (char*)dirname(npath));
+	printf("prnt:%s\n", parent);
+
+
+
+	//change dir to parent dir
+	check = cd_wrap(parent);
+
+	if(check < 0)
+	{
+		printf("can't unlink this non existent thing, bad path\n");
+		return -1;
+	}
+
+	//
+	pip = running->cwd;
+	strcpy(rmpath, "");
+	strcat(rmpath, pwd());
+	strcat(rmpath, "/");
+	strcat(rmpath, child);
+	printf("child's path:%s\n", rmpath);
+
+	//see if this child has a path
+	myino = getino(pip->dev, rmpath);
+
+	//try to make dir in parent directory, may fail if it exists or not enough data or inodes
+	myunlink(pip, myino);
+
+	//goback to original working directory
+	cd_wrap(ogpath);
+}
+
+int myunlink(MINODE *pip, int myino)
+{
+	//in this function we will always be in the parent directory
+	//pwd is where the thing is 
+	int i;
+	char *cp;
+	MINODE *mip;
+
+	if(myino == 0)
+	{
+		printf("this file doesn't exist\n");
+		return -1;
+	}
+
+	if(pip == 0) 
+	{
+		printf("wtf parent mip is null\n");
+		return -1;
+	}
+
+	mip = iget(pip->dev, myino);
+
+	if(!(S_ISLNK(mip->INODE.i_mode) || S_ISREG(mip->INODE.i_mode)))
+	{
+		printf("only unlink links and reg files\n");
+		return -1;
+	}
+
+	//we know it exists at this points,but doesnt hurt to check again
+	if(mip->refCount > 1)
+	{
+		printf("BUSY ino(%d) refCount: %d. comeback later\n", mip->ino, mip->refCount);
+		return -1;
+	}
+	//at this point file is an empty dir and not busyz
+	mip->INODE.i_links_count--;
+	mip->dirty = 1;
+
+	if(mip->INODE.i_links_count == 0)
+	//deallocate it's blocks
+  {
+  	for (i=0; i<12; i++)
+  	{
+	    if (mip->INODE.i_block[i]==0)
+	    {
+	      continue;
+	    }
+      bdealloc(mip->dev, mip->INODE.i_block[i]);
+   	}
+    idealloc(mip->dev, mip->ino);
+ 	}
+
+
+  iput(mip); //(which clears mip->refCount = 0);
+
+
+  rm_child(pip, myino);
+
+	getchar();
+	//exit(1);
+}
+
 
 #endif
 
