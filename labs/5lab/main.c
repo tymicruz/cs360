@@ -63,6 +63,16 @@ getchar();*/
 				cd_wrap(myargv[1]);
 			}
 		}
+		if(strcmp(myargv[0], "mkdir") == 0)
+		{
+			if(myargc < 2){
+				mkdir_wrap(0);
+			}
+			else{
+	
+				mkdir_wrap(myargv[1]);
+			}
+		}
 		if(strcmp(myargv[0], "pwd") == 0)
 		{
 			printf("%s\n",pwd());

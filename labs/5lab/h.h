@@ -1040,9 +1040,9 @@ int mount_root()
 	//printf("%d", (char*)ctime(running->cwd->INODE.i_ctime));
 	//list_dir(running->cwd);
 	//ls("./");
-	strcpy(myname,"money/");
+	//strcpy(myname,"///////");
 	
-	mkdir_wrap(myname);
+	//mkdir_wrap(myname);
 
 	//		strcpy(myname,"/money/");
 
@@ -1380,18 +1380,15 @@ int make_dir(char *npath)
 
 	MINODE *pip;// = running->cwd;
 
-	printf("herex-->1");getchar();
-	//malloc or make some room for pathname to hold pwd
+	//printf("herex-->1");getchar();
 	ogpath = (char *)malloc(sizeof(char) * (strlen(pwd() + 1) + 1));
 	strcpy(ogpath, pwd());
-	printf("%s\n", ogpath);
+	//printf("%s\n", ogpath);
 
-	printf("herex-->2");getchar();
-	printf("p:%s\n", npath);
-	//printf("%s\n", basename(npath));
-	//child = (char *)malloc(sizeof(char) * (strlen((char*)basename(npath)) + 1));
+	//printf("herex-->2");getchar();
+	//printf("p:%s\n", npath);
 	strcpy(child, (char*)basename(npath));
-	printf("child:%s\n", child);
+	//printf("child:%s\n", child);
 
 	if(strlen(child) == 0)
 	{
@@ -1399,12 +1396,10 @@ int make_dir(char *npath)
 		return -1;
 	}
 
-	printf("herex-->2");getchar();
-	printf("p:%s\n", npath);
-	//printf("%s\n", dirname(npath));
-	//parent = (char *)malloc(sizeof(char) * (strlen(dirname(npath)) + 1));
+	//printf("herex-->2");getchar();
+	//printf("p:%s\n", npath);
 	strcpy(parent, (char*)dirname(npath));
-	printf("prnt:%s\n", parent);
+	//printf("prnt:%s\n", parent);
 
 
 	//change dir to parent dir
@@ -1419,7 +1414,7 @@ int make_dir(char *npath)
 	//
 	pip = running->cwd;
 
-//try to make dir in parent directory, may fail if it exists or not enough data or inodes
+	//try to make dir in parent directory, may fail if it exists or not enough data or inodes
 	mymakedir(pip, child);
 
 	//goback to original working directory
