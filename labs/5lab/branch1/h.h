@@ -106,8 +106,9 @@ int num_inode_blocks_G;
 int num_inodes_G;
 int num_blocks_G;
 
-PROC *running, p0, p1;
+PROC *running, proc[NPROC];//p0, p1, 
 MINODE minode[NMINODES], *root;
+OFT    oft[NOFT];
 
 //used for printing file mode
 char *t1 = "xwrxwrxwr-------";
@@ -163,11 +164,17 @@ int creat_wrap(char *path);
 int creato(char *npath);
 int mycreat(MINODE *pip, char *name);
 
+//need to add a dev field to all the my stuff because pid-dev doesn't alwayys = a dir entry's dev
+
 int remove_dir(char *npath);
 int myremovedir(MINODE *pip, int ino, char *myname);
 int rmdir_wrap(char *path);
 int emptyDir(MINODE *pip, MINODE *mip);
 int rm_child(MINODE *pip, int myino, char *myname);
+
+//shouldn't be able to link acros devices
+//if dev changes when i do the cd behind scenes 
+//cd back to og and say can link across
 
 int unlink(char *npath);
 int myunlink(MINODE *pip, int ino, char *myname);
@@ -177,6 +184,25 @@ int link_wrap(char *path1, char *path2, int symflag);
 int link(char *path1, char *path2, int symflag);
 int mylink(MINODE *pip, int myino, char *myname);
 int mysymlink(MINODE *pip, char *oldname, char *name);
+
+int open_file_wrap(char *path, char *mode);
+int open_file(char *path, int mode);
+int myopen_file(MINODE *mip, int mode);
+
+int truncateInode(MINODE* mip);
+OFT* getOFT();
+
+int close_file_wrap(char *fde);
+int close_file(int fdesc);
+int myclose_file(int fdesc);
+int mylseek(int fdesc, int position);
+int pfd();
+int dup_fd_wrap(char *fde);
+int dup_fd(int fdesc);
+int mydup_fd(int fdesc);
+int dup2_fd_wrap(char *fde, char *gde);
+int dup2_fd(int fdesc, int gdesc);
+int mydup2_fd(int fdesc, int gdesc);
 
 int get_block(int dev, int blk, char buf[ ]){
 
@@ -602,22 +628,24 @@ int init()
 	//p1;// = (PROC*)malloc(sizeof(PROC));
 
 	//init proc strucutres
-	running = &p0;
+	running = &(proc[0]);
 
-	p0.uid = 0;
-	p0.gid = 0;
+	proc[0].uid = 0;
+	proc[0].gid = 0;
+	proc[0].status = 1;
 	//*(p0.fd) = 0;
 	for (i = 0; i < NFD; ++i)
 	{
-		p0.fd[i] = 0;
+		proc[0].fd[i] = 0;
 	}
 
-	p1.uid = 1;
-	p1.gid = 1;
+	proc[1].uid = 1;
+	proc[1].gid = 1;
+	proc[1].status = 0;
 	//*(p1.fd) = 0;
 	for (i = 0; i < NFD; ++i)
 	{
-		p1.fd[i] = 0;
+		proc[1].fd[i] = 0;
 	}
 
 	//init all minodes
@@ -631,6 +659,14 @@ int init()
 		minode[i].mounted=0;
 		minode[i].mountptr = 0;
 	}
+
+  for(i = 0; i < NOFT;i++)
+  {
+    oft[i].mode = 0;
+    oft[i].refCount = 0;
+    oft[i].inodeptr = 0;
+    oft[i].offset = 0;
+  }
 
 	root = 0;
 }
@@ -654,13 +690,12 @@ int mount_root()
 	getGDInfo(fd);
 
 	root = iget(fd, ROOT_INODE);
- 	p0.cwd = iget(fd, ROOT_INODE); 
- 	p1.cwd = iget(fd, ROOT_INODE);
+ 	proc[0].cwd = iget(fd, ROOT_INODE); 
+ 	proc[1].cwd = iget(fd, ROOT_INODE);
 
 	printf("root minode refCount = %d\n", root->refCount);
 
 	running->cwd = iget(fd, ROOT_INODE);
-
 }
 
 
@@ -1753,117 +1788,116 @@ int tokCmd(char *line, char *myargv[], int *myargc)
 //currently only works for inodes in root device
 int nextDataBlock(INODE *ip, int num)
 {
-		int i = 0, j = 0;		
-		char level1[BLKSIZE];
-		char level2[BLKSIZE];
-		int *intp, *intp2; //int pointers for access data block data in buffer
+	int i = 0, j = 0;		
+	char level1[BLKSIZE];
+	char level2[BLKSIZE];
+	int *intp, *intp2; //int pointers for access data block data in buffer
 
-		int count = 0, blocks = 0;
+	int count = 0, blocks = 0;
 
-		if(ip->i_size % BLKSIZE)
+	if(ip->i_size % BLKSIZE)
+	{
+		blocks++;
+	}
+	blocks += ip->i_size / BLKSIZE;
+
+	for(i = 0; i < 12 && i < blocks; i++, count++)
+	{
+		if(num == count)
 		{
-			blocks++;
+			return ip->i_block[i];
 		}
-		blocks += ip->i_size / BLKSIZE;
-
-		for(i = 0; i < 12 && i < blocks; i++, count++)
+		if(ip->i_block[i] == 0)
 		{
-			if(num == count)
-			{
-				return ip->i_block[i];
-			}
-			if(ip->i_block[i] == 0)
-			{
-				return 0;
-			}
+			return 0;
 		}
+	}
 
 		//block we're looking for doesn't exist
 		//I should be 12 or less at this point
-		if(i >= blocks)
-		{
-			//if here i is less than 12
-			return 0;
+	if(i >= blocks)
+	{
+		//if here i is less than 12
+		return 0;
+	}
+
+	//get blocks left
+	blocks-= i;
+
+	//i must be 12 here
+	j = ip->i_block[12];
+
+	//12 only has only level of indirect
+	get_block(fd, j, level1);
+
+	intp = (int *)level1;
+	i = 0;
+
+	//keep looking for the block you need
+	while((int)intp < (int)level1 + (int)BLKSIZE && intp != 0 && *intp != 0)
+	{
+		if(num == count)
+		{	
+			return (*intp);
 		}
-
-		//get blocks left
-		blocks-= i;
-
-		//i must be 12 here
-		j = ip->i_block[12];
-
-		//12 only has only level of indirect
-		get_block(fd, j, level1);
-
-		intp = (int *)level1;
-		i = 0;
-
-		//keep looking for the block you need
-		while((int)intp < (int)level1 + (int)BLKSIZE && intp != 0 && *intp != 0)
-		{
-			if(num == count)
-			{	
-				return (*intp);
-			}
-
-			//can't go any farther so just return 0;
+		//can't go any farther so just return 0;
 		/*			if((*intp) == 0)
 			{
 				return 0;
 			}*/
 
-			intp++;
-			i++;	
-			count++;
-		}
+		intp++;
+		i++;	
+		count++;
+	}
 
 		//block we're looking for doesn't exist for this inode
 		//
-		if(i >= blocks)
+	if(i >= blocks)
+	{
+		return 0;
+	}
+
+	//get blocks left
+	blocks-= i;
+
+	j = ip->i_block[13];
+
+	//block 13 has double indirect blocks
+	get_block(fd, j, level1);
+	intp = (int*)level1;
+	i = 0;
+
+	while((int)intp < (int)level1 + (int)BLKSIZE && intp != 0 && *intp != 0)
+	{
+		get_block(fd, *intp, level2);
+		intp2 = (int *)level2;
+
+		while((int)intp2 < (int)level2 + (int)BLKSIZE && intp2 != 0 && *intp2 != 0)
 		{
-			return 0;
-		}
-
-		//get blocks left
-		blocks-= i;
-
-		j = ip->i_block[13];
-
-		//block 13 has double indirect blocks
-		get_block(fd, j, level1);
-		intp = (int*)level1;
-		i = 0;
-
-		while((int)intp < (int)level1 + (int)BLKSIZE && intp != 0 && *intp != 0)
-		{
-			get_block(fd, *intp, level2);
-			intp2 = (int *)level2;
-
-			while((int)intp2 < (int)level2 + (int)BLKSIZE && intp2 != 0 && *intp2 != 0)
+			if(num == count)
 			{
-				if(num == count)
-				{
-					return (*intp2);
-				}
+				return (*intp2);
+			}
 
-				//can't go any further so just return now
-				/*if((*intp2) == 0)
-				{
+      				//can't go any further so just return now
+			/*if((*intp2) == 0)
+			{
 					return 0;
 				}	*/
-				intp2++;//go to next in level two	
-				i++;
-				count++;
-			}
-			intp++;//go to next in level one
-		}	
+			intp2++;//go to next in level two	
+			i++;
+			count++;
+		}
+		intp++;//go to next in level one
+	}	
+	
+	blocks-= i;
 
-		blocks-= i;
+	if(blocks > 0){return 0;} //we need to go to tripple indirect blocks
 
-		if(blocks > 0){return 0;} //we need to go to tripple indirect blocks
-
-		//i dont think it can ever get to this line of code
-		return 0;
+	//i dont think it can ever get to this line of code
+	return 0;
 }
 
 int quit()
@@ -1895,7 +1929,7 @@ int pressEnterToContinue()
 //will return the blk number of new allocated block
 int newDataBlock(MINODE *pip)
 {
-		int i = 0, j = 0;		
+	int i = 0, j = 0;		
 		char level1[BLKSIZE];
 		char level2[BLKSIZE];
 		int *intp, *intp2; //int pointers for access data block data in buffer
@@ -2350,7 +2384,6 @@ int myremovedir(MINODE *pip, int myino, char* myname)
 	}
 	//at this point file is an empty dir and not busyz
 
-
 	//deallocate it's blocks
   for (i=0; i<12; i++){
     if (mip->INODE.i_block[i]==0)
@@ -2615,6 +2648,7 @@ int unlink(char *npath)
 	cd_wrap(ogpath);
 }
 
+//currently can't unlink a file who's inode is in oft
 int myunlink(MINODE *pip, int myino, char *myname)
 {
 	//in this function we will always be in the parent directory
@@ -2636,7 +2670,7 @@ int myunlink(MINODE *pip, int myino, char *myname)
 	}
 
 	mip = iget(pip->dev, myino);
-
+  //printf("refCount of %d is %d", mip->ino, mip->refCount);getchar();
 	//if mip is null, can't link across 
 
 	if(!(S_ISLNK(mip->INODE.i_mode) || S_ISREG(mip->INODE.i_mode)))
@@ -2646,13 +2680,28 @@ int myunlink(MINODE *pip, int myino, char *myname)
 		return -1;
 	}
 
+  //currently I can't close any file that has the inode of an oft entry
 	//we know it exists at this points,but doesnt hurt to check again
-	if(mip->refCount > 2)
+	if(mip->refCount > 1)
 	{
 		iput(mip);
 		printf("BUSY ino(%d) refCount: %d. comeback later\n", mip->ino, mip->refCount);
 		return -1;
 	}
+
+  for(i = 0; i < NFD; ++i)
+  {
+    if(running->fd[i])
+    {
+      if(running->fd[i]->inodeptr == mip)
+      {
+        iput(mip);
+        printf("ino being used in OFT of running proc\n");
+        return -1;
+      }
+    }
+  }
+
 	//at this point file is an empty dir and not busyz
 	mip->INODE.i_links_count--;
 	mip->dirty = 1;
@@ -2674,44 +2723,6 @@ int myunlink(MINODE *pip, int myino, char *myname)
   iput(mip); //(which clears mip->refCount = 0);
 
   rm_child(pip, myino, myname);
-}
-
-int truncateInode(MINODE* mip)
-{
-	int i = 0;
-	char buf[BLKSIZE];
-	int *ip;
-
-	for(i = 0; i < 12; i++)
-	{
-		if(mip->INODE.i_block[i])
-		{
-			bdealloc(mip->dev, mip->INODE.i_block[i]);
-		}
-		else
-		{
-			return;
-		}
-	}
-
-	if(mip->INODE.i_block[12] <= 0)
-		return;
-
-	get_block(mip->dev, mip->INODE.i_block[12], data_buf);
-
-	ip = (int*)buf;
-
-	//256 = BLKSIZE/sizeof(int)
-	i = 0;
-	while(i < 256)
-	{
-		if((*ip) == 0)
-			return;
-
-		bdealloc(mip->dev, *ip);
-		i++;
-		ip++;
-	}
 }
 
 int link_wrap(char *path1, char *path2, int symflag)
@@ -2935,7 +2946,827 @@ int mysymlink(MINODE *pip, char *oldname, char *name)
 	enter_name(pip, ino, name);
 }
 
+int open_file_wrap(char *path, char *mode)
+{
+	int fmode = 0;
+  //printf("herex-->1 %s", path);getchar();
+	if(path == 0 || mode == 0)
+	{
+		printf("give me something to open\n");
+		return -1;
+	}
 
+	//remove excess / at the end of string. i found this to cause problems so i just always remove the trailing '/'s
+	while(strlen(path) > 1 && path[strlen(path) - 1] == '/')
+	{
+		path[strlen(path) - 1] = 0;
+	}
+
+	//convert mode string into mode int
+	if(strcmp(mode, "0") == 0)
+	{
+		fmode = 0;//read
+	}
+	else if (strcmp(mode, "1") == 0)
+	{
+		fmode = 1;//write
+	}
+	else if (strcmp(mode, "2") == 0)
+	{
+		fmode = 2;//readwrite
+	}
+	else if (strcmp(mode, "3") == 0)
+	{
+		fmode = 3;//append
+	}
+	else
+	{
+		fmode = -1;
+	}
+
+	if(-1 == fmode)
+	{
+		printf("invalid file mode\n");
+		return -1;
+	}
+
+
+	open_file(path, fmode);
+}
+
+int open_file(char *path, int mode)
+{
+	char *ogpath = 0, parent[MAX_PATH_LEN], child[MAX_PATH_LEN], openpath[MAX_PATH_LEN];
+	int check = 0;
+	int myino = 0;
+
+
+	MINODE *pip, *mip;// = running->cwd;
+
+
+	ogpath = (char *)malloc(sizeof(char) * (strlen(pwd() + 1) + 1));
+	strcpy(ogpath, pwd());
+	printf("%s\n", ogpath);
+
+	//printf("herex-->2");getchar();
+	//printf("p:%s\n", npath);
+	strcpy(child, (char*)basename(path));
+	//printf("child:%s\n", child);
+
+	if(strlen(child) == 0)
+	{
+		printf("houston we have a problem, can't open_file\n");
+		return -1;
+	}
+
+	//printf("p:%s\n", path);
+	strcpy(parent, (char*)dirname(path));
+	//printf("prnt:%s\n", parent);
+
+	//change dir to parent dir
+	check = cd_wrap(parent);
+
+	if(check < 0)
+	{
+		printf("can't open this, bad path\n");
+		return -1;
+	}
+
+	//
+	pip = running->cwd;
+	strcpy(openpath, "");
+	strcat(openpath, pwd());
+	strcat(openpath, "/");
+	strcat(openpath, child);
+	printf("child's path:%s\n", openpath);
+
+	//see if this child has a path
+	myino = getino(pip->dev, openpath);
+
+	if(myino <= 0)
+	{
+		printf("file doesn't exist, bad path\n");
+		return -1;
+	}
+
+	//will have to change this pip->dev to something else
+	mip = iget(pip->dev, myino);
+
+	//try to make dir in parent directory, may fail if it exists or not enough data or inodes
+	myopen_file(mip, mode);
+
+  //don't put because oft is going to keep refrencing it
+  //will i put if function ffails in myopen file
+	//iput(mip);
+	//goback to original working directory
+	cd_wrap(ogpath);
+}
+
+int myopen_file(MINODE *mip, int mode)
+{   
+	int i = 0;
+  OFT *opfita;
+
+  //printf("refCount of %d is %d", mip->ino, mip->refCount);getchar();
+
+	if(!S_ISREG(mip->INODE.i_mode))
+	{
+		printf("only open reg files\n");
+    iput(mip);
+		return -1;
+	}
+
+		//if it's not read we have to make sure it's not already open
+	if(mode != 0)
+	{
+		while(i < NFD)
+		{	
+			if(running->fd[i])
+			{
+				//check is file is already opoen
+				if(running->fd[i]->inodeptr == mip)
+				{
+					printf("can't open file for 1 2 or 3 if already open\n");
+          iput(mip);
+					return -1;
+				}
+			}
+			//else th fd is open
+			i++;
+		}
+	}
+  else
+  {
+    for (i = 0; i < NFD; ++i)
+    {
+      if(running->fd[i])
+      {
+        if(running->fd[i]->inodeptr == mip && running->fd[i] != 0)
+        {
+          printf("file already open for something else, can't open for read\n");
+          iput(mip);
+          return -1;
+        }
+      }
+    }
+  }
+
+  //currently I can open a descriptor to read a file
+  //that is being written to
+
+	i = 0;
+	while(running->fd[i] && i < NFD)
+	{
+		i++;
+	}
+	//keep i as is for reference to the oft index in current proc's fd array
+	if(i == NFD)
+	{
+		printf("no free fd's on running process\n");
+    iput(mip);
+		return -1;
+	}
+
+  opfita = (OFT *)malloc(sizeof(OFT));//might not have to do this
+  opfita = getOFT();
+
+	/*running->fd[i]->mode = mode;
+	running->fd[i]->refCount = 1;
+	running->fd[i]->inodeptr = mip;*/
+
+  opfita->mode = mode;
+  opfita->refCount = 1;
+  opfita->inodeptr = mip;
+
+	switch(mode)
+	{
+		case 0: opfita->offset = 0;//read mode
+			break;
+		case 1: truncateInode(mip); //WR truncate file to 0 size
+			opfita->offset = 0;
+			break;
+		case 2: opfita->offset = 0; //RW does not truncate file
+			break;
+		case 3: opfita->offset = mip->INODE.i_size; //APPEND MODE
+			break;
+		default: printf("invalid mode\n");
+			return -1;
+      break;
+	}
+
+  running->fd[i] = opfita;
+
+  //i don't know which time field i need to update?
+  running->fd[i]->inodeptr->INODE.i_atime = time(0);
+  running->fd[i]->inodeptr->INODE.i_ctime = time(0);
+  running->fd[i]->inodeptr->INODE.i_mtime = time(0);
+
+  printf("fd %d opened\n", i);
+    //printf("refCount of %d is %d", mip->ino, mip->refCount);getchar();
+  //mylseek(i, 5);
+  return i;
+}
+
+int truncateInode(MINODE* mip)
+{
+	int i = 0, j = 0;
+	char buf[BLKSIZE];
+	int *ip, *ip2;
+
+	mip->INODE.i_size = 0;
+
+	for(i = 0; i < 12; i++)
+	{
+		if(mip->INODE.i_block[i])
+		{
+			bdealloc(mip->dev, mip->INODE.i_block[i]);
+			mip->INODE.i_block[i] = 0;
+			mip->dirty = 1;
+		}
+		else
+		{
+			return;
+		}
+	}
+
+	if(mip->INODE.i_block[12] <= 0)
+		return;
+
+	get_block(mip->dev, mip->INODE.i_block[12], data_buf);
+
+	ip = (int*)data_buf;
+	//256 = BLKSIZE/sizeof(int)
+	i = 0;
+	while(i < 256)
+	{
+		if((*ip) == 0)
+		{
+			put_block(mip->dev, mip->INODE.i_block[12], data_buf);
+			bdealloc(mip->dev, mip->INODE.i_block[12]);
+			mip->INODE.i_block[12] = 0;
+			return;
+		}
+
+		bdealloc(mip->dev, *ip);
+		*ip = 0;
+		i++;
+		ip++;
+	}
+
+	put_block(mip->dev, mip->INODE.i_block[12], data_buf);
+	bdealloc(mip->dev, mip->INODE.i_block[12]);
+	mip->INODE.i_block[12] = 0;
+
+	if(mip->INODE.i_block[13] <= 0)
+		return;
+
+	//load block 13 into memory
+	get_block(mip->dev, mip->INODE.i_block[13], data_buf);
+	ip = (int*)data_buf;
+	i = 0; j = 0;
+
+	//go through all int in the 
+	while(i < 256)
+	{
+		if((*ip) == 0)
+		{
+			put_block(mip->dev, mip->INODE.i_block[13], data_buf);
+			bdealloc(mip->dev, mip->INODE.i_block[13]);
+			return;
+		}
+
+		get_block(mip->dev, *ip, buf);
+		ip2 = (int*)buf;
+		
+		while(j < 256)
+		{
+			if(*ip2 == 0)
+			{
+
+				put_block(mip->dev, *ip, buf);
+				return;
+			}
+
+			bdealloc(mip->dev, *ip2);
+			*ip2 = 0;
+			j++;
+			ip2++;
+		}
+
+		j = 0;
+		put_block(mip->dev, *ip, buf);
+		*ip = 0;
+		i++;
+		ip++;
+	}
+
+	put_block(mip->dev, mip->INODE.i_block[13], data_buf);
+	bdealloc(mip->dev, mip->INODE.i_block[13]);
+}
+
+OFT* getOFT()
+{
+  int i = 0;
+
+  for(i = 0; i < NOFT;i++)
+  {
+
+    if(oft[i].refCount == 0)
+    {
+      return &(oft[i]);
+    }
+
+  }
+
+  return 0;
+}
+
+int close_file_wrap(char *fde)
+{
+  int fdesc = 0;
+
+  if(fde == 0)
+  {
+    printf("give me something to close\n");
+    return -1;
+  }
+
+  //convert mode string into mode int
+  if(strcmp(fde, "0") == 0)
+  {
+    fdesc = 0;//read
+  }
+  else if (strcmp(fde, "1") == 0)
+  {
+    fdesc = 1;//write
+  }
+  else if (strcmp(fde, "2") == 0)
+  {
+    fdesc = 2;//readwrite
+  }
+  else if (strcmp(fde, "3") == 0)
+  {
+    fdesc = 3;//append
+  }
+   else if (strcmp(fde, "4") == 0)
+  {
+    fdesc = 4;//append
+  }
+   else if (strcmp(fde, "5") == 0)
+  {
+    fdesc = 5;//append
+  }
+   else if (strcmp(fde, "6") == 0)
+  {
+    fdesc = 6;//append
+  }
+   else if (strcmp(fde, "7") == 0)
+  {
+    fdesc = 7;//append
+  }
+   else if (strcmp(fde, "8") == 0)
+  {
+    fdesc = 8;//append
+  }
+   else if (strcmp(fde, "9") == 0)
+  {
+    fdesc = 9;//append
+  }
+  else
+  {
+    fdesc = -1;
+  }
+
+  if(-1 == fdesc)
+  {
+    printf("out of range or unacceptable\n");
+    return -1;
+  }
+
+  close_file(fdesc);
+}
+
+int close_file(int fdesc)
+{
+  myclose_file(fdesc);
+}
+
+int myclose_file(int fdesc)
+{
+  MINODE *mip;
+
+  if(running->fd[fdesc] && running->fd[fdesc]->refCount > 0)
+  {
+    running->fd[fdesc]->refCount--;
+
+    if(running->fd[fdesc]->refCount > 0)
+    {
+      return 0;
+    }
+
+    mip = running->fd[fdesc]->inodeptr;
+    running->fd[fdesc]->refCount = 0;//redundant
+    iput(mip);
+    running->fd[fdesc]= 0;  
+
+    return 0;
+  }
+  else 
+  {
+    printf("this fd is not open\n");
+    return -1;
+  }
+}
+
+int mylseek(int fdesc, int position)
+{
+  MINODE *mip;
+  int ogposition;
+
+  if(fdesc < 0 || fdesc > 9)
+  {
+    printf("this fd is out of range\n");
+    return -1;
+  }
+
+  //if it's null or ref count == 0, this fd is not being used return
+  if(!(running->fd[fdesc]) || running->fd[fdesc]->refCount == 0)
+  {
+    printf("this fd isn't open\n");
+    return -1;
+  }
+
+  mip = running->fd[fdesc]->inodeptr;
+  ogposition = running->fd[fdesc]->offset;
+
+  if(position <= mip->INODE.i_size && position >= 0)
+  {
+    running->fd[fdesc]->offset = position;
+  }
+  else if(position > mip->INODE.i_size)
+  {
+    running->fd[fdesc]->offset = mip->INODE.i_size;
+    printf("seeked beyond file (we go to end)\n");
+  }
+  else
+  {
+    printf("can't seek negative position.\n");
+    return -1;
+  }
+
+  return ogposition;
+}
+
+int pfd()
+{
+  int i = 0;
+  printf("fd\tmode\toffset\tINODE\n");
+  for (i = 0; i < NFD; i++)
+  {
+    if(running->fd[i])
+    {
+      printf("%d\t%d\t%d\t[%d, %d]\n", i, running->fd[i]->mode, running->fd[i]->offset, running->fd[i]->inodeptr->dev, running->fd[i]->inodeptr->ino);
+    }
+  }
+}
+
+int dup_fd_wrap(char *fde)
+{
+  int fdesc = 0;
+
+  if(fde == 0)
+  {
+    printf("give me something to dup\n");
+    return -1;
+  }
+
+  //convert mode string into mode int
+  if(strcmp(fde, "0") == 0)
+  {
+    fdesc = 0;//read
+  }
+  else if (strcmp(fde, "1") == 0)
+  {
+    fdesc = 1;//write
+  }
+  else if (strcmp(fde, "2") == 0)
+  {
+    fdesc = 2;//readwrite
+  }
+  else if (strcmp(fde, "3") == 0)
+  {
+    fdesc = 3;//append
+  }
+   else if (strcmp(fde, "4") == 0)
+  {
+    fdesc = 4;//append
+  }
+   else if (strcmp(fde, "5") == 0)
+  {
+    fdesc = 5;//append
+  }
+   else if (strcmp(fde, "6") == 0)
+  {
+    fdesc = 6;//append
+  }
+   else if (strcmp(fde, "7") == 0)
+  {
+    fdesc = 7;//append
+  }
+   else if (strcmp(fde, "8") == 0)
+  {
+    fdesc = 8;//append
+  }
+   else if (strcmp(fde, "9") == 0)
+  {
+    fdesc = 9;//append
+  }
+  else
+  {
+    fdesc = -1;
+  }
+
+  if(-1 == fdesc)
+  {
+    printf("out of range or unacceptable fd\n");
+    return -1;
+  }
+
+  dup_fd(fdesc);
+}
+
+int dup_fd(int fdesc)
+{
+  mydup_fd(fdesc);
+}
+
+int mydup_fd(int fdesc)
+{
+  int i = 0;
+
+  if(running->fd[fdesc] && running->fd[fdesc]->refCount > 0)
+  {
+    if(running->fd[fdesc]->mode != 0)
+    {
+      printf("can only dup read descriptors\n");
+      return -1;
+    }
+
+    for (i = 0; i < NFD; ++i)
+    {
+      //found unused file descriptor
+      if(running->fd[i] == 0)
+      {
+        break;
+      }
+    }
+
+    if(i >= NFD)
+    {
+      printf("no open fd's\n");
+      return -1;
+    }
+
+    running->fd[i] = (OFT*)malloc(sizeof(OFT));
+    memcpy(running->fd[i], running->fd[fdesc], sizeof(OFT));
+    running->fd[i]->inodeptr = iget(running->fd[fdesc]->inodeptr->dev, running->fd[fdesc]->inodeptr->ino);
+  }
+  else 
+  {
+    printf("this fd is not open\n");
+    return -1;
+  }
+}
+
+//-------
+int dup2_fd_wrap(char *fde, char *gde)
+{
+  int fdesc = 0, gdesc = 0;
+
+  if(fde == 0 || gde == 0)
+  {
+    printf("missing something for dup2\n");
+    return -1;
+  }
+
+  //convert mode string into mode int
+  if(strcmp(fde, "0") == 0)
+  {
+    fdesc = 0;//read
+  }
+  else if (strcmp(fde, "1") == 0)
+  {
+    fdesc = 1;//write
+  }
+  else if (strcmp(fde, "2") == 0)
+  {
+    fdesc = 2;//readwrite
+  }
+  else if (strcmp(fde, "3") == 0)
+  {
+    fdesc = 3;//append
+  }
+   else if (strcmp(fde, "4") == 0)
+  {
+    fdesc = 4;//append
+  }
+   else if (strcmp(fde, "5") == 0)
+  {
+    fdesc = 5;//append
+  }
+   else if (strcmp(fde, "6") == 0)
+  {
+    fdesc = 6;//append
+  }
+   else if (strcmp(fde, "7") == 0)
+  {
+    fdesc = 7;//append
+  }
+   else if (strcmp(fde, "8") == 0)
+  {
+    fdesc = 8;//append
+  }
+   else if (strcmp(fde, "9") == 0)
+  {
+    fdesc = 9;//append
+  }
+  else
+  {
+    fdesc = -1;
+  }
+
+   if(strcmp(gde, "0") == 0)
+  {
+    gdesc = 0;//read
+  }
+  else if (strcmp(gde, "1") == 0)
+  {
+    gdesc = 1;//write
+  }
+  else if (strcmp(gde, "2") == 0)
+  {
+    gdesc = 2;//readwrite
+  }
+  else if (strcmp(gde, "3") == 0)
+  {
+    gdesc = 3;//append
+  }
+   else if (strcmp(gde, "4") == 0)
+  {
+    gdesc = 4;//append
+  }
+   else if (strcmp(gde, "5") == 0)
+  {
+    gdesc = 5;//append
+  }
+   else if (strcmp(gde, "6") == 0)
+  {
+    gdesc = 6;//append
+  }
+   else if (strcmp(gde, "7") == 0)
+  {
+    gdesc = 7;//append
+  }
+   else if (strcmp(gde, "8") == 0)
+  {
+    gdesc = 8;//append
+  }
+   else if (strcmp(gde, "9") == 0)
+  {
+    gdesc = 9;//append
+  }
+  else
+  {
+    gdesc = -1;
+  }
+
+  if(-1 == fdesc || -1 == gdesc)
+  {
+    printf("fd or gd out of range or unacceptable fd\n");
+    return -1;
+  }
+
+  dup2_fd(fdesc, gdesc);
+}
+
+int dup2_fd(int fdesc, int gdesc)
+{
+  mydup2_fd(fdesc, gdesc);
+}
+
+int mydup2_fd(int fdesc, int gdesc)
+{
+  int i = 0;
+
+  if(running->fd[fdesc] && running->fd[fdesc]->refCount > 0)
+  {
+    if(running->fd[fdesc]->mode != 0)
+    {
+      printf("can only dup read descriptors\n");
+      return -1;
+    }
+
+    myclose_file(gdesc);
+
+    running->fd[gdesc] = (OFT*)malloc(sizeof(OFT));
+    memcpy(running->fd[gdesc], running->fd[fdesc], sizeof(OFT));
+    running->fd[gdesc]->inodeptr = iget(running->fd[fdesc]->inodeptr->dev, running->fd[fdesc]->inodeptr->ino);
+  }
+  else 
+  {
+    printf("this fd is not open\n");
+    return -1;
+  }
+}
+
+int read_file_wrap(char *fde, char *stringbytes)
+{
+  int fdesc = 0, bytes = 0;
+  fdesc = atoi(fde);
+
+  if(fdecs == 0 && strcmp(fde, "0") != 0)
+  {
+    printf("invalid fd\n");
+    return -1;
+  }
+
+  bytes = atoi(stringbytes);
+
+  if(bytes == 0 && strcmp(fde, "0") == 0)
+  {
+    printf("why would I read 0 bytes\n");
+    return -1;
+  }
+  else if(bytes == 0)
+  {
+    printf("invalid in for bytes to read\n");
+    return -1;
+  }
+
+  read_file(fdes, bytes);
+}
+
+int read_file(int fdesc, int bytes)
+{
+  myread_file(fdesc, bytes);
+}
+
+int myread_file(int fdesc, int bytes)
+{
+  MINODE *mip;
+  int avail = 0, remain = 0;
+  int offset = 0, start = 0;
+  int lbk = 0;
+  char *cp;
+
+
+  if(fdesc > NFD || fdesc < 0)
+  {
+    printf("fd to read is out of range\n");
+    return -1;
+  }
+
+  if(running->fd[fdecs] == 0 || running->fd[fdecs]->refCount == 0)
+  {
+    printf("%d is not open\n", fdesc);
+    return -1;
+  }
+
+  if(running->fd[fdecs]->mode != 0)
+  {
+    printf("%d is not open for read (0)\n", fdesc);
+  }
+
+  //at this point our fd is open and open for read more
+  mip = running->fd[fdecs]->inodeptr;
+  offset = running->fd[fdecs]->offset;
+
+  if(offset == mip->INODE.i_size)
+  {
+    printf("no more to read\n");
+    return 0;
+  }
+  if(offset > mip->INODE.i_size)
+  {
+    printf("no more to read. how tf did this happen?\n");
+    return 0;
+  }
+
+  avail = mip->INODE.i_size - offset;
+  lbk = offset / BLKSIZE;
+  start = offset % BLKSIZE;
+
+  bzero(data_buf);
+  get_block(mip->dev, lbk, data_buf);
+  //go through i_block array byte by byte to get stuff from files
+ /* while(done_reading)
+  {
+
+  }*/
+    //my magic 
+    more = nextDataBlock(&(parent->INODE), block_check++);
+
+}
 
 #endif
 

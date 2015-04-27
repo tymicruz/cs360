@@ -21,12 +21,7 @@ getchar();*/
 
 	init();
 	mount_root();
-/*	//printf("%s\n", tester);
-	printf("%s\n", basename(tester));
-	//printf("%s\n", basename(tester));
-	tester[strlen(tester) - strlen(basename(tester)) - 1] = 0;
-	printf("%s\n", basename(tester));
-	//printf("%s\n", baseNameChopper(tester));*/
+
 	printf("pwd:%s\n",pwd());
 
 	while(1)
@@ -83,6 +78,57 @@ getchar();*/
 			else{
 	
 				rmdir_wrap(myargv[1]);
+			}
+		}
+		if(strcmp(myargv[0], "open") == 0)
+		{
+			if(myargc < 3){
+				open_file_wrap(0, 0);
+			}
+			else{
+	//printf("%s\n", myargv[1]);getchar();
+				open_file_wrap(myargv[1], myargv[2]);
+			}
+		}
+		if(strcmp(myargv[0], "close") == 0)
+		{
+			if(myargc < 2){
+				close_file_wrap(0);
+			}
+			else{
+	
+				close_file_wrap(myargv[1]);
+			}
+		}
+		if(strcmp(myargv[0], "read") == 0)
+		{
+			if(myargc < 3){
+				read_file_wrap(0, 0);
+			}
+			else{
+	
+				read_file_wrap(myargv[1], myargv[2]);
+			}
+		}
+		if(strcmp(myargv[0], "dup") == 0)
+		{
+			if(myargc < 2){
+				dup_fd_wrap(0);
+			}
+			else{
+	
+				dup_fd_wrap(myargv[1]);
+			}
+		}
+		if(strcmp(myargv[0], "dup2") == 0)
+		{
+
+			if(myargc < 3){
+				dup2_fd_wrap(0, 0);
+			}
+			else
+			{
+				dup2_fd_wrap(myargv[1], myargv[2]);
 			}
 		}
 		if(strcmp(myargv[0], "unlink") == 0)
@@ -164,6 +210,10 @@ getchar();*/
 				bdealloc(fd, i);
 			}
 			bmap(fd);
+		}
+		if(strcmp(myargv[0], "pfd") == 0)
+		{
+			pfd();
 		}
 
 		if(1){
