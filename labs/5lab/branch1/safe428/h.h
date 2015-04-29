@@ -1951,7 +1951,6 @@ int newDataBlock(MINODE *pip)
 		int *intp, *intp2; //int pointers for access data block data in buffer
 		int k = 0;
 		int count = 0, blocks = 0;
-    bzero(data_buf, BLKSIZE);
 
 		ip = &(pip->INODE);
 
@@ -1964,34 +1963,29 @@ int newDataBlock(MINODE *pip)
 
 		blocks += ip->i_size / BLKSIZE;
 
-		for(i = 0; i < 12; i++, count++)
+		for(i = 0; i < 12 && i < blocks; i++, count++)
 		{
 			if(ip->i_block[i] == 0)
 			{
 				k = balloc(pip->dev);
 				pip->dirty = 1;
 				ip->i_block[i] = k;
-        if(S_ISDIR(ip->i_mode))
-				  ip->i_size+= BLKSIZE;
+				ip->i_size+= BLKSIZE;
         //printf("%d\n", i);
 				return k;
 			}
 		}
 
-    if(ip->i_block[12] == 0)
-    {
-
-      //allocate block to store indirect blocks
-      ip->i_block[12] = balloc(pip->dev);
-
-      if(ip->i_block[12] < 0)
-      {
-        printf("no more datablock\n");
-        return -1;
-      }
-
-      put_block(pip->dev, ip->i_block[12], data_buf);
-    }
+		//block we're looking for doesn't exist
+		//I should be 12 or less at this point
+		if(i >= blocks)
+		{
+				k = balloc(pip->dev);
+				pip->dirty = 1;
+				ip->i_block[i] = k;
+				ip->i_size+= BLKSIZE;
+				return k;
+		}
 
 		//get blocks left
 		blocks-= i;
@@ -2006,7 +2000,7 @@ int newDataBlock(MINODE *pip)
 		i = 0;
 
 		//keep looking for the block you need
-		while((int)intp < (int)level1 + (int)BLKSIZE)
+		while((int)intp < (int)level1 + (int)BLKSIZE && i < blocks && intp != 0 && *intp != 0)
 		{
 			//won't ever have this, the i < blocks will cause break
 			if((*intp) == 0)
@@ -2014,87 +2008,61 @@ int newDataBlock(MINODE *pip)
 				k = balloc(pip->dev);
 				(*intp) = k;
 				pip->dirty = 1;
-        if(S_ISDIR(ip->i_mode))
-				  ip->i_size+= BLKSIZE;
-				put_block(pip->dev, j, level1);
+				ip->i_size+= BLKSIZE;
+				get_block(pip->dev, j, level1);
 				return k;
 			}
+
+			//can't go any farther so just return 0;
+		/*			if((*intp) == 0)
+			{
+				return 0;
+			}*/
 
 			intp++;
 			i++;	
 			count++;
 		}
 
-
+		//block we're looking for doesn't exist for this inode
+		//
+		if(i >= blocks)
+		{
+				k = balloc(pip->dev);
+				(*intp) = k;
+				pip->dirty = 1;
+				ip->i_size+= BLKSIZE;
+				get_block(pip->dev, j, level1);
+				return k;
+		}
 
 		//not going this far  right now
 		//printf("need double indirect, not doing that bull sh\n");
 		//return -10;
-
+    
 		//get blocks left
 		blocks-= i;
-
-    if(ip->i_block[13] == 0)
-    {
-      //allocate block to store double indirect blocks
-      ip->i_block[13] = balloc(pip->dev);
-      printf("dub indirect will begin\n");
-      if(ip->i_block[13] < 0)
-      {
-        printf("no more datablocka\n");
-        return -1;
-      }
-
-      put_block(pip->dev, ip->i_block[13], data_buf);
-    }
 
 		j = ip->i_block[13];
 
 		//block 13 has double indirect blocks
-		get_block(pip->dev, j, level1);
+		get_block(fd, j, level1);
 		intp = (int*)level1;
 		i = 0;
 
-		while((int)intp < (int)level1 + (int)BLKSIZE)
+		while((int)intp < (int)level1 + (int)BLKSIZE && i < blocks && intp != 0 && *intp != 0)
 		{
-      if(*intp == 0)
-      {
-        //allocate block to store double indirect blocks
-
-        *intp = balloc(pip->dev);
-        printf("new  dub indirect block great\n");getchar();
-        if(*intp < 0)
-        {
-          printf("no more datablocka\n");
-          return -1;
-        }
-        put_block(pip->dev, j, level1);
-        put_block(pip->dev, *intp, data_buf);
-      }
-
-			get_block(pip->dev, *intp, level2);
+			get_block(fd, *intp, level2);
 			intp2 = (int *)level2;
 
-			while((int)intp2 < (int)level2 + (int)BLKSIZE)
+			while((int)intp2 < (int)level2 + (int)BLKSIZE && i < blocks && intp2 != 0 && *intp2 != 0)
 			{
 				if((*intp2) == 0)
 				{
-
-				  k = balloc(pip->dev);
-          if(k < 0)
-          {
-            printf("no more blocks\n");
-            return -1;
-          }
-
-          *intp2 = k;
-          put_block(pip->dev, *intp, level2); 
-
-				  pip->dirty = 1;
-          //printf("new dub indirect %d block great\n", k);getchar();
-          if(S_ISDIR(ip->i_mode))
-				    ip->i_size+= BLKSIZE;
-				  return k;
+				k = balloc(pip->dev);
+				pip->dirty = 1;
+				ip->i_size+= BLKSIZE;
+				return k;
 				}
 
 				//can't go any further so just return now
@@ -2111,12 +2079,21 @@ int newDataBlock(MINODE *pip)
 
 		blocks-= i;
 
-    if(blocks > 0)
-    {
-      printf("we need trip indirect which is probably wrong.\n");pressEnterToContinue();
-      return -1;
-    }
+		if(i >= blocks)
+		{
+				k = balloc(pip->dev);
+				pip->dirty = 1;
+				ip->i_size+= BLKSIZE;
+				return k;
+		}
 
+		if(blocks > 0)
+		{
+			printf("we need trip indirect which is probably wrong.\n");
+			return -1;
+		} //we need to go to tripple indirect blocks
+
+		//i dont think it can ever get to this line of code
 		printf("how tf did we get here?\n");
 		return 0;
 }

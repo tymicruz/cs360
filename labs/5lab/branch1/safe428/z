@@ -1,0 +1,19 @@
+rm frisbee
+touch frisbee
+mkfs frisbee 1440
+mount -o loop frisbee /mnt
+ls /mnt
+
+mkdir /mnt/X
+mkdir /mnt/YY
+mkdir /mnt/ZZZ
+mkdir /mnt/X/Xfiles
+
+cp hugefile bigfile tiny /mnt/X/Xfiles/
+cp hugefile /mnt/ZZZ/
+cp bigfile /mnt/YY/
+cp tiny /mnt/X/
+umount /mnt
+
+cc -o z.out main.c h.h
+z.out frisbee
