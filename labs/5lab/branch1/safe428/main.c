@@ -121,6 +121,16 @@ getchar();*/
 				read_file_wrap(myargv[1], myargv[2]);
 			}
 		}
+		if(strcmp(myargv[0], "cp") == 0)
+		{
+			if(myargc < 3){
+				copy_file_wrap(0, 0);
+			}
+			else{
+	
+				copy_file_wrap(myargv[1], myargv[2]);
+			}
+		}
 		if(strcmp(myargv[0], "write") == 0)
 		{
 			if(myargc < 3){

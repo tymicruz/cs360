@@ -219,6 +219,10 @@ int write_file_wrap(char *fde, char *stuff);
 int write_file(int fdesc, char *stuff);
 int mywrite_file(int fdesc, char stuff[]);
 
+int copy_file_wrap(char *source, char *dest);
+int copy_file(int fdsource, int fddest);
+int mycopy_file(int fdsource, int fddest);
+
 
 int get_block(int dev, int blk, char buf[ ]){
 
@@ -1656,7 +1660,7 @@ int enter_name(MINODE *pip, int myino, char *myname)
 			//printf("new inode %d to %d!!!!!\n", dp->inode, more);
 			//put this edited data_buf back to disk
 			put_block(pip->dev, more, data_buf);
-			return;
+			return 1;
 		}
 
 		printf("can't fit in this this datablock %d\n", more);
@@ -1682,7 +1686,7 @@ int enter_name(MINODE *pip, int myino, char *myname)
 		if(i <= 0)
 		{
 			printf("no more blocks to allocate");
-			return;
+			return -1;
 		}
 
 		get_block(pip->dev, i, data_buf);
@@ -1702,7 +1706,7 @@ int enter_name(MINODE *pip, int myino, char *myname)
 		}
 		//put this edited data_buf back to disk
 		put_block(pip->dev, i, data_buf);
-		return;		
+		return 1;		
 }
 
 //get ideal len of dir entry
@@ -1980,10 +1984,9 @@ int newDataBlock(MINODE *pip)
 
     if(ip->i_block[12] == 0)
     {
-
       //allocate block to store indirect blocks
       ip->i_block[12] = balloc(pip->dev);
-
+      printf("indirect blocks begin\n");
       if(ip->i_block[12] < 0)
       {
         printf("no more datablock\n");
@@ -2011,6 +2014,7 @@ int newDataBlock(MINODE *pip)
 			//won't ever have this, the i < blocks will cause break
 			if((*intp) == 0)
 			{	
+        printf("new indirect block need\n");
 				k = balloc(pip->dev);
 				(*intp) = k;
 				pip->dirty = 1;
@@ -2024,8 +2028,6 @@ int newDataBlock(MINODE *pip)
 			i++;	
 			count++;
 		}
-
-
 
 		//not going this far  right now
 		//printf("need double indirect, not doing that bull sh\n");
@@ -2062,7 +2064,7 @@ int newDataBlock(MINODE *pip)
         //allocate block to store double indirect blocks
 
         *intp = balloc(pip->dev);
-        printf("new  dub indirect block great\n");getchar();
+        printf("new  dub indirect block great\n");//getchar();
         if(*intp < 0)
         {
           printf("no more datablocka\n");
@@ -2220,10 +2222,12 @@ int creato(char *npath)
 	pip = running->cwd;
 
 	//try to make dir in parent directory, may fail if it exists or not enough data or inodes
-	mycreat(pip, child);
+	check = mycreat(pip, child);
 
 	//goback to original working directory
 	cd_wrap(ogpath);
+
+  return check;
 }
 
 int mycreat(MINODE *pip, char *name)
@@ -2283,7 +2287,7 @@ int mycreat(MINODE *pip, char *name)
 	iput(mip);
 
 	printf("new ino will be %d\n", ino);
-	enter_name(pip, ino, name);
+	return enter_name(pip, ino, name);
 }
 
 int creat_wrap(char *path)
@@ -2683,10 +2687,12 @@ int unlink(char *npath)
 	myino = getino(pip->dev, rmpath);
 
 	//try to make dir in parent directory, may fail if it exists or not enough data or inodes
-	myunlink(pip, myino, child);
+	check = myunlink(pip, myino, child);
 
 	//goback to original working directory
 	cd_wrap(ogpath);
+
+  return check;
 }
 
 //currently can't unlink a file who's inode is in oft
@@ -2749,8 +2755,8 @@ int myunlink(MINODE *pip, int myino, char *myname)
 
 	//deallocate it's blocks
 	if(mip->INODE.i_links_count == 0)
-  	{
-  		for (i=0; i<12; i++)
+  {
+  		/*for (i=0; i<12; i++)
   		{
 	    	if (mip->INODE.i_block[i]==0)
 	    	{
@@ -2758,12 +2764,13 @@ int myunlink(MINODE *pip, int myino, char *myname)
 	    	}
       		bdealloc(mip->dev, mip->INODE.i_block[i]);
    		}
-    	idealloc(mip->dev, mip->ino);
+    	idealloc(mip->dev, mip->ino);*/
+      truncateInode(mip);
  	}
 
   iput(mip); //(which clears mip->refCount = 0);
 
-  rm_child(pip, myino, myname);
+  return rm_child(pip, myino, myname);
 }
 
 int link_wrap(char *path1, char *path2, int symflag)
@@ -3032,7 +3039,7 @@ int open_file_wrap(char *path, char *mode)
 	}
 
 
-	open_file(path, fmode);
+	return open_file(path, fmode);
 }
 
 int open_file(char *path, int mode)
@@ -3213,102 +3220,208 @@ int myopen_file(MINODE *mip, int mode)
 
 int truncateInode(MINODE* mip)
 {
-	int i = 0, j = 0;
-	char buf[BLKSIZE];
-	int *ip, *ip2;
-
-	mip->INODE.i_size = 0;
-  mip->dirty = 1;
+	int i = 0, j = 0;    
+  char level1[BLKSIZE];
+  char level2[BLKSIZE];
+  int *intp, *intp2; //int pointers for access data block data in buffer
+  int k = 0;
+  int count = 0, blocks = 0;
   bzero(data_buf, BLKSIZE);
 
-	for(i = 0; i < 12; i++)
-	{
-		if(mip->INODE.i_block[i])
-		{
-      put_block(mip->dev, mip->INODE.i_block[i], data_buf);
-			bdealloc(mip->dev, mip->INODE.i_block[i]);
-			mip->INODE.i_block[i] = 0;
-			mip->dirty = 1;
-		}
-		else
-		{
-			return;
-		}
-	}
+    ip = &(mip->INODE);
 
-	if(mip->INODE.i_block[12] <= 0)
-		return;
+    //keep current size until we 
+    //check all blocks
+    if(ip->i_size % BLKSIZE)
+    {
+      blocks++;
+    }
 
-	get_block(mip->dev, mip->INODE.i_block[12], data_buf);
+    blocks += ip->i_size / BLKSIZE;
 
-	ip = (int*)data_buf;
-	//256 = BLKSIZE/sizeof(int)
-	i = 0;
-	while(i < 256)
-	{
-		if((*ip) == 0)
-		{
-			put_block(mip->dev, mip->INODE.i_block[12], data_buf);
-			bdealloc(mip->dev, mip->INODE.i_block[12]);
-			mip->INODE.i_block[12] = 0;
-			return;
-		}
+    for(i = 0; i < 12; i++, count++)
+    {
+      if(ip->i_block[i] == 0)
+      {
+       return 0;
+      }
+      
+      bdealloc(mip->dev, ip->i_block[i]);
+      put_block(mip->dev, ip->i_block[i], data_buf);
+      mip->dirty = 1;
+      ip->i_block[i] = 0;
+    }
 
-		bdealloc(mip->dev, *ip);
-		*ip = 0;
-		i++;
-		ip++;
-	}
+    if(ip->i_block[12] == 0)
+    {
+      return 0;
+    }
 
-	put_block(mip->dev, mip->INODE.i_block[12], data_buf);
-	bdealloc(mip->dev, mip->INODE.i_block[12]);
-	mip->INODE.i_block[12] = 0;
+    //get blocks left
+    blocks-= i;
 
-	if(mip->INODE.i_block[13] <= 0)
-		return;
+    //i must be 12 here
+    j = (ip->i_block[12]);
 
-	//load block 13 into memory
-	get_block(mip->dev, mip->INODE.i_block[13], data_buf);
-	ip = (int*)data_buf;
-	i = 0; j = 0;
+    //12 only has only level of indirect
+    get_block(mip->dev, j, level1);
+    bdealloc(mip->dev, j);
 
-	//go through all int in the 
-	while(i < 256)
-	{
-		if((*ip) == 0)
-		{
-			put_block(mip->dev, mip->INODE.i_block[13], data_buf);
-			bdealloc(mip->dev, mip->INODE.i_block[13]);
-			return;
-		}
+    intp = (int *)level1;
+    i = 0;
 
-		get_block(mip->dev, *ip, buf);
-		ip2 = (int*)buf;
-		
-		while(j < 256)
-		{
-			if(*ip2 == 0)
-			{
+    //keep looking for the block you need
+    while((int)intp < (int)level1 + (int)BLKSIZE)
+    {
+      //won't ever have this, the i < blocks will cause break
+      if((*intp) == 0)
+      { 
+        //clear iblock 12 
+        put_block(mip->dev, j, data_buf);
+        return 0;
+      }
 
-				put_block(mip->dev, *ip, buf);
-				return;
-			}
+      bdealloc(mip->dev, *intp);
+      put_block(mip->dev, *intp, data_buf);
+      (*intp) = 0;
+      
 
-			bdealloc(mip->dev, *ip2);
-			*ip2 = 0;
-			j++;
-			ip2++;
-		}
+      intp++;
+      i++;  
+      count++;
+    }
 
-		j = 0;
-		put_block(mip->dev, *ip, buf);
-		*ip = 0;
-		i++;
-		ip++;
-	}
+    //clear level one of 12
+    put_block(mip->dev, j, data_buf);
+    //not going this far  right now
+    //printf("need double indirect, not doing that bull sh\n");
+    //return -10;
 
-	put_block(mip->dev, mip->INODE.i_block[13], data_buf);
-	bdealloc(mip->dev, mip->INODE.i_block[13]);
+    //get blocks left
+    blocks-= i;
+
+
+
+    if(ip->i_block[13] == 0)
+    {
+      return 0;
+      //allocate block to store double indirect blocks
+  /*    ip->i_block[13] = balloc(pip->dev);
+      printf("dub indirect will begin\n");
+      if(ip->i_block[13] < 0)
+      {
+        printf("no more datablocka\n");
+        return -1;
+      }
+
+      put_block(pip->dev, ip->i_block[13], data_buf);*/
+    }
+
+    j = ip->i_block[13];
+    ip->i_block[13] = 0;
+
+    //block 13 has double indirect blocks
+    get_block(mip->dev, j, level1);
+    bdealloc(mip->dev, j);
+    put_block(mip->dev, j, data_buf); 
+    //got iblock13 in memory, now clear it on disk
+
+    intp = (int*)level1;
+    i = 0;
+
+    printf("dellocing double indirect\n");pressEnterToContinue();
+    while((int)intp < (int)level1 + (int)BLKSIZE)
+    {
+      if(*intp == 0)
+      {
+        //clear block j on disk which help level 1 ints
+        //put_block(mip->dev, j, data_buf); 
+        return 0;
+        //allocate block to store double indirect blocks
+  /*        return 0;
+        *intp = balloc(pip->dev);
+        printf("new  dub indirect block great\n");getchar();
+        if(*intp < 0)
+        {
+          printf("no more datablocka\n");
+          return -1;
+        }
+        put_block(pip->dev, j, level1);
+        put_block(pip->dev, *intp, data_buf);*/
+      }
+      else
+      {
+        //deallocate a block from 1st level
+        //get clock
+        get_block(mip->dev, *intp, level2);
+        intp2 = (int *)level2;
+
+        //then deallocate it on disk because we have it in memory
+        bdealloc(mip->dev, *intp);
+        //clear this block
+        put_block(mip->dev, *intp, data_buf);
+        *intp = 0; 
+      }
+
+
+
+      while((int)intp2 < (int)level2 + (int)BLKSIZE)
+      {
+        if((*intp2) == 0)
+        {
+         
+          return 0;
+       /*   k = balloc(pip->dev);
+          if(k < 0)
+          {
+            printf("no more blocks\n");
+            return -1;
+          }
+
+          *intp2 = k;
+          put_block(pip->dev, *intp, level2); 
+
+          pip->dirty = 1;
+          //printf("new dub indirect %d block great\n", k);getchar();
+          if(S_ISDIR(ip->i_mode))
+            ip->i_size+= BLKSIZE;
+          return k;*/
+        }
+        else
+        {
+          bdealloc(mip->dev, *intp2);
+          put_block(mip->dev, *intp2, data_buf);
+          *intp2 = 0;
+          put_block(mip->dev, *intp, level2); 
+        }
+
+        //can't go any further so just return now
+        /*if((*intp2) == 0)
+        {
+          return 0;
+        } */
+        intp2++;//go to next in level two 
+        i++;
+        count++;
+      }
+      intp++;//go to next in level one
+    } 
+
+    blocks-= i;
+
+    printf("this file is huge wtd\n");pressEnterToContinue();
+    ip->i_block[14] = 0;
+    return 0;
+
+    if(blocks > 0)
+    {
+
+      printf("we need trip indirect which is probably wrong.\n");pressEnterToContinue();
+      return -1;
+    }
+
+    printf("how tf did we get here?\n");
+    return 0;
 }
 
 OFT* getOFT()
@@ -3923,7 +4036,27 @@ int myread_file(int fdesc, int bytes)
 
 int cat_file_wrap(char *path)
 {
-  int fdesc = open_file(path, 0);
+  int fdesc = 0;
+
+  if(path == 0)
+  {
+    printf("give me something to cat\n");
+    return -1;
+  }
+
+  while(strlen(path) > 1 && path[strlen(path) - 1] == '/')
+  {
+    path[strlen(path) - 1] = 0;
+  }
+
+  fdesc = open_file(path, 0);
+
+  if(fdesc < 0)
+  {
+    printf("can't open file to cat\n");
+    return -1;
+  }
+
   cat_file(fdesc);
   close_file(fdesc);
 }
@@ -4231,6 +4364,219 @@ int mywrite_file(int fdesc, char stuff[])
   //printf("%s\n", buf);
   printf("-->wrote %d char to fd %d<--\n", i, fdesc);
   return desired;
+}
+
+int copy_file_wrap(char *source, char *dest)
+{
+  int fdsrc = 0, fddes = 0, destcheck = 0;
+
+  if(source == 0 || dest == 0)
+  {
+    printf("need source and dest to cpy\n");
+    return -1;
+  }
+
+  while(strlen(source) > 1 && source[strlen(source) - 1] == '/')
+  {
+    source[strlen(source) - 1] = 0;
+  }
+
+  fdsrc = open_file(source, 0);
+
+  if(fdsrc < 0)
+  {
+    printf("can't open file to copy\n");
+    return -1;
+  }
+
+   while(strlen(dest) > 1 && dest[strlen(dest) - 1] == '/')
+  {
+    dest[strlen(dest) - 1] = 0;
+  }
+
+  destcheck = creato(dest);
+  //printf("dest check: %d",destcheck);getchar();
+
+  if(destcheck < 0)
+  {
+    //try to unlink
+    destcheck = unlink(dest);
+
+    if(destcheck)
+    {
+      close_file(fdsrc);
+      printf("can't creat file to copy to\n");
+      return -1;
+    }
+    else{
+      printf("removing previous file\n");getchar();
+    }
+
+    destcheck = creato(dest);
+
+    if (destcheck < 0)
+    {
+      printf("this is some bullshit how could this happen. i was unlinked therefore it should be able to be made now\n");
+      return -1;
+    }
+  }
+  
+  //copy_file(fdsrc, fddes);
+
+  fddes = open_file(dest, 1);
+
+  copy_file(fdsrc, fddes);
+  close_file(fdsrc);
+  close_file(fddes);
+
+  return 0;
+}
+
+int copy_file(int fdsource, int fddest)
+{
+  mycopy_file(fdsource, fddest);
+}
+
+int mycopy_file(int fdsource, int fddest)
+{
+  
+  MINODE *mip;
+  int avail = 0, remain = 0;
+  int offset = 0, start = 0;
+  int lbk = 0;
+  char *cp;
+  int more = 0, block_check = 0, i =0;
+  int desired = 0;
+  char buf[BLKSIZE+1];
+
+  bzero(data_buf, BLKSIZE);
+  if(fdsource > NFD || fdsource < 0)
+  {
+    printf("fd to read is out of range\n");
+    return -1;
+  }
+
+  if(running->fd[fdsource] == 0 || running->fd[fdsource]->refCount == 0)
+  {
+    printf("%d is not open\n", fdsource);
+    return -1;
+  }
+
+  if(running->fd[fdsource]->mode != 0 && running->fd[fdsource]->mode != 2)
+  {
+    printf("file descriptor %d is not open for read (0 or 2)\n", fdsource);
+    return -1;
+  }
+
+  //at this point our fd is open and open for read more
+  mip = running->fd[fdsource]->inodeptr;
+  offset = running->fd[fdsource]->offset;
+
+  if(offset == mip->INODE.i_size)
+  {
+    printf("no more to read\n");
+    return 0;
+  }
+  if(offset > mip->INODE.i_size)
+  {
+    printf("no more to read. how tf did this happen?\n");
+    return 0;
+  }
+
+  avail = mip->INODE.i_size - offset;
+  lbk = offset / BLKSIZE;
+  start = offset % BLKSIZE;
+  remain = avail;
+  desired = avail;
+
+  //this should happen while copying , if it does that's some bullshit
+  if(desired > avail)
+  {
+    printf("you want to read %d, but only %d available.", desired, avail);pressEnterToContinue();
+    desired = avail;
+  }
+
+  //redundant af but w/e im using a lot of copying an pasting from other functions this is harmeless to me
+  remain = desired;
+
+  bzero(data_buf, BLKSIZE);
+  bzero(buf, BLKSIZE + 1);
+  more = nextDataBlock(&(mip->INODE), lbk++);
+  get_block(mip->dev, more, data_buf);
+  cp = data_buf;
+  cp+= start;
+  //printf("%d\n", start);getchar();
+
+  //getting first logical block
+  if(remain >= BLKSIZE - start)
+  {
+      memcpy(buf, cp, (data_buf + BLKSIZE) - cp );
+      (running->fd[fdsource]->offset) += (BLKSIZE - start);
+      remain-=(BLKSIZE - start);
+      mywrite_file(fddest, buf);   
+  }
+  else
+  {
+    memcpy(buf, cp, remain);
+    running->fd[fdsource]->offset += remain;
+    remain = 0;  
+    mywrite_file(fddest, buf);
+    printf("\nmy read: read %d char from fd %d\n", desired, fdsource);
+    return desired;
+  }
+
+  //printf("%s", buf);
+
+  more = nextDataBlock(&(mip->INODE), lbk++);
+  //getchar();
+
+  while(more && remain)
+  {
+    bzero(buf, BLKSIZE);
+
+    //printf("-->more: %d<--", more);getchar();
+    get_block(mip->dev, more, data_buf);
+
+    if(remain >= BLKSIZE)
+    {
+      memcpy(buf, data_buf, BLKSIZE);
+      running->fd[fdsource]->offset += BLKSIZE;
+      remain-=BLKSIZE;
+    }
+    else
+    {
+      memcpy(buf, data_buf, remain);
+      running->fd[fdsource]->offset += remain;
+      remain = 0;
+    }
+
+    more = nextDataBlock(&(mip->INODE), lbk++);
+    mywrite_file(fddest, buf);
+
+    if(!more && remain)
+    {
+      printf("wtf no more blocks to read but we need more\n");
+    }
+
+  }
+
+
+  //buf[i]
+  //printf("%s\n", buf);
+  printf("\nmy cpy: cpyd %d char\n", desired);
+  return desired;
+}
+
+int move_file_wrap(char *source, char *dest)
+{
+  int check = copy_file_wrap(source, dest);
+
+  if(check < 0)
+  {
+    printf("move not complete\n");
+  }
+
+  unlink(source);
 }
 
 #endif
